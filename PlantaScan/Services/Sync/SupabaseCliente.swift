@@ -138,7 +138,8 @@ final class SupabaseCliente {
         if !query.isEmpty {
             componentes?.queryItems = query
             // "+" do fuso horário precisa ser codificado para o PostgREST.
-            componentes?.percentEncodedQuery = componentes?.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")
+            let codificada = componentes?.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")
+            componentes?.percentEncodedQuery = codificada
         }
         guard let url = componentes?.url else { throw ErroSupabase.servidor("URL inválida.") }
 
