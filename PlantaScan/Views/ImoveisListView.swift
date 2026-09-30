@@ -15,7 +15,9 @@ enum ImovelEditorAlvo: Identifiable {
 
 struct ImoveisListView: View {
     @Environment(ImovelStore.self) private var store
+    @Environment(Sincronizador.self) private var sinc
     @State private var editor: ImovelEditorAlvo?
+    @State private var mostrandoConta = false
     @State private var paraApagar: Imovel?
     @State private var busca = ""
     @State private var importando = false
@@ -67,6 +69,22 @@ struct ImoveisListView: View {
                 ImovelDetailView(imovelID: id)
             }
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        mostrandoConta = true
+                    } label: {
+                        if sinc.sincronizando {
+                            ProgressView()
+                        } else {
+                            Label(
+                                "Conta e sincronização",
+                                systemImage: sinc.logado
+                                    ? (sinc.ultimoErro == nil ? "checkmark.icloud" : "exclamationmark.icloud")
+                                    : "icloud.slash"
+                            )
+                        }
+                    }
+                }
                 ToolbarItem(placement: .primaryAction) {
                     Menu {
                         Button {
@@ -86,6 +104,9 @@ struct ImoveisListView: View {
             }
             .sheet(item: $editor) { alvo in
                 ImovelFormView(alvo: alvo)
+            }
+            .sheet(isPresented: $mostrandoConta) {
+                ContaView()
             }
             .fileImporter(isPresented: $importando, allowedContentTypes: Self.tiposPlanilha) { resultado in
                 importar(resultado)
@@ -123,6 +144,14 @@ struct ImoveisListView: View {
 
     private var lista: some View {
         List {
+            if !sinc.logado {
+                Button {
+                    mostrandoConta = true
+                } label: {
+                    Label("Entre na sua conta para sincronizar com o computador", systemImage: "icloud")
+                        .font(.subheadline)
+                }
+            }
             ForEach(filtrados) { imovel in
                 NavigationLink(value: imovel.id) {
                     ImovelRow(imovel: imovel)
@@ -153,6 +182,9 @@ struct ImoveisListView: View {
                     }
                 }
             }
+        }
+        .refreshable {
+            await sinc.sincronizar()
         }
     }
 

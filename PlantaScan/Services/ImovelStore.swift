@@ -3,10 +3,13 @@ import Foundation
 import Observation
 import RoomPlan
 
+@MainActor
 @Observable
 final class ImovelStore {
     var imoveis: [Imovel] = []
     var mensagemErro: String?
+    /// Avisado a cada mudança local (usado pela sincronização).
+    @ObservationIgnored var aoAlterar: ((AlteracaoLocal) -> Void)?
 
     init() {
         recarregar()
@@ -34,6 +37,7 @@ final class ImovelStore {
         imoveis.append(novo)
         ordenar()
         persistir(novo)
+        aoAlterar?(.imovel(novo.id))
         return novo
     }
 
@@ -56,6 +60,7 @@ final class ImovelStore {
             novo.eircode = item.eircode.isEmpty ? nil : item.eircode
             imoveis.append(novo)
             persistir(novo)
+            aoAlterar?(.imovel(novo.id))
             importados += 1
         }
         ordenar()
@@ -64,19 +69,81 @@ final class ImovelStore {
 
     func atualizar(_ imovel: Imovel) {
         guard let i = imoveis.firstIndex(where: { $0.id == imovel.id }) else { return }
-        let renomeado = imoveis[i].nome != imovel.nome
+        let antigo = imoveis[i]
         imoveis[i] = imovel
-        if renomeado { ordenar() }
+        if antigo.nome != imovel.nome { ordenar() }
         persistir(imovel)
+        registrarDiferencas(de: antigo, para: imovel)
+    }
+
+    /// Descobre o que mudou para a sincronização enviar só isso.
+    private func registrarDiferencas(de antigo: Imovel, para novo: Imovel) {
+        guard let aoAlterar else { return }
+        if antigo.nome != novo.nome || antigo.endereco != novo.endereco || antigo.eircode != novo.eircode {
+            aoAlterar(.imovel(novo.id))
+        }
+        let anteriores = Dictionary(antigo.comodos.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        for c in novo.comodos where anteriores[c.id] != c {
+            aoAlterar(.comodo(c.id))
+        }
+        let atuais = Set(novo.comodos.map(\.id))
+        for c in antigo.comodos where !atuais.contains(c.id) {
+            aoAlterar(.comodoApagado(c.id))
+        }
     }
 
     func apagarImovel(id: UUID) {
         do {
             try Storage.apagar(imovelID: id)
             imoveis.removeAll { $0.id == id }
+            aoAlterar?(.imovelApagado(id))
         } catch {
             mensagemErro = "Não foi possível apagar o imóvel: \(error.localizedDescription)"
         }
+    }
+
+    // MARK: Mudanças vindas da nuvem (não geram novo envio)
+
+    func aplicarImovelRemoto(id: UUID, nome: String, endereco: String, eircode: String?) {
+        if let i = imoveis.firstIndex(where: { $0.id == id }) {
+            guard imoveis[i].nome != nome || imoveis[i].endereco != endereco || imoveis[i].eircode != eircode else { return }
+            imoveis[i].nome = nome
+            imoveis[i].endereco = endereco
+            imoveis[i].eircode = eircode
+            persistir(imoveis[i])
+        } else {
+            var novo = Imovel(nome: nome, endereco: endereco)
+            novo.id = id
+            novo.eircode = eircode
+            imoveis.append(novo)
+            persistir(novo)
+        }
+        ordenar()
+    }
+
+    func aplicarImovelApagadoRemoto(id: UUID) {
+        guard imoveis.contains(where: { $0.id == id }) else { return }
+        try? Storage.apagar(imovelID: id)
+        imoveis.removeAll { $0.id == id }
+    }
+
+    func aplicarComodoRemoto(_ comodo: Comodo, imovelID: UUID) {
+        guard let i = imoveis.firstIndex(where: { $0.id == imovelID }) else { return }
+        if let j = imoveis[i].comodos.firstIndex(where: { $0.id == comodo.id }) {
+            guard imoveis[i].comodos[j] != comodo else { return }
+            imoveis[i].comodos[j] = comodo
+        } else {
+            imoveis[i].comodos.append(comodo)
+        }
+        persistir(imoveis[i])
+    }
+
+    func aplicarComodoApagadoRemoto(id: UUID, imovelID: UUID) {
+        guard let i = imoveis.firstIndex(where: { $0.id == imovelID }),
+              imoveis[i].comodos.contains(where: { $0.id == id }) else { return }
+        Storage.apagarScan(comodoID: id, imovelID: imovelID)
+        imoveis[i].comodos.removeAll { $0.id == id }
+        persistir(imoveis[i])
     }
 
     // MARK: Cômodos

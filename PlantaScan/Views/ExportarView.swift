@@ -7,6 +7,7 @@ struct ExportarView: View {
     let imovelID: UUID
 
     @Environment(ImovelStore.self) private var store
+    @Environment(Sincronizador.self) private var sinc
     @Environment(\.dismiss) private var dismiss
     @State private var incluirCortes = true
     @State private var incluirQuadros = true
@@ -26,11 +27,14 @@ struct ExportarView: View {
                     Toggle("Mobiliário na planta", isOn: $mostrarMobiliario)
                     Button {
                         gerar { imovel, montagens in
-                            try PDFExporter.gerarPDF(
+                            let url = try PDFExporter.gerarPDF(
                                 imovel: imovel,
                                 montagens: montagens,
                                 opcoes: .init(incluirCortes: incluirCortes, incluirQuadros: incluirQuadros, mostrarMobiliario: mostrarMobiliario)
                             )
+                            // Deixa o PDF disponível no site ("Baixar PDF").
+                            sinc.enviarPDF(url, imovelID: imovel.id)
+                            return url
                         }
                     } label: {
                         Label("Gerar PDF", systemImage: "doc.richtext")
