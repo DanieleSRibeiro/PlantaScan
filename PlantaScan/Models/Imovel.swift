@@ -42,7 +42,16 @@ struct Comodo: Identifiable, Codable, Hashable {
     /// Correção manual do norte, em graus.
     var ajusteNorte: Double?
 
+    /// Posição deste cômodo na planta de outro grupo (encaixe pela porta ou manual).
+    var alinhamento: Alinhamento?
+
     var andarOuPadrao: Int { andar ?? 1 }
+
+    /// Grupo de cômodos que se movem juntos (mesma sessão de scan).
+    var chaveSessaoPropria: String { (sessao ?? id).uuidString }
+
+    /// Grupo em cujo sistema de coordenadas o cômodo é desenhado (depois do encaixe).
+    var chaveGrupo: String { alinhamento?.referencia ?? chaveSessaoPropria }
 
     /// Ângulo final do norte na planta (radianos), ou nil se não foi medido nem ajustado.
     var anguloNorte: Double? {

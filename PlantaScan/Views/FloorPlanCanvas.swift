@@ -8,15 +8,22 @@ struct FloorPlanCanvas: View {
     var mostrarNomeComodo = true
     var mostrarNomesObjetos = true
     var anguloNorte: Double?
+    /// Limites fixos (para a escala não mudar enquanto um cômodo é arrastado).
+    var limites: CGRect? = nil
+    /// Se definido, o toque devolve o ponto (em metros) em vez de selecionar um elemento.
+    var aoTocar: ((CGPoint) -> Void)? = nil
+    /// Se definido, arrastar move algo (delta em metros) em vez de mover a vista.
+    var aoArrastar: ((CGVector) -> Void)? = nil
 
     @State private var zoom: CGFloat = 1
     @State private var zoomBase: CGFloat = 1
     @State private var desloc: CGSize = .zero
     @State private var deslocBase: CGSize = .zero
+    @State private var ultimaTranslacao: CGSize = .zero
 
     var body: some View {
         GeometryReader { geo in
-            let t = PlanoTransform.ajustar(plano.limites, em: geo.size, zoom: zoom, deslocamento: desloc)
+            let t = PlanoTransform.ajustar(limites ?? plano.limites, em: geo.size, zoom: zoom, deslocamento: desloc)
             Canvas { ctx, size in
                 FloorPlanRenderer(
                     plano: plano, t: t, selecionado: selecionado?.id, titulo: titulo,
@@ -34,16 +41,30 @@ struct FloorPlanCanvas: View {
                     .simultaneously(with:
                         DragGesture()
                             .onChanged { v in
-                                desloc = CGSize(width: deslocBase.width + v.translation.width,
-                                                height: deslocBase.height + v.translation.height)
+                                if let aoArrastar {
+                                    let dx = v.translation.width - ultimaTranslacao.width
+                                    let dy = v.translation.height - ultimaTranslacao.height
+                                    ultimaTranslacao = v.translation
+                                    aoArrastar(CGVector(dx: dx / t.escala, dy: dy / t.escala))
+                                } else {
+                                    desloc = CGSize(width: deslocBase.width + v.translation.width,
+                                                    height: deslocBase.height + v.translation.height)
+                                }
                             }
-                            .onEnded { _ in deslocBase = desloc }
+                            .onEnded { _ in
+                                ultimaTranslacao = .zero
+                                if aoArrastar == nil { deslocBase = desloc }
+                            }
                     )
             )
             .simultaneousGesture(
                 SpatialTapGesture().onEnded { v in
                     let p = t.plano(v.location)
-                    selecionado = plano.elemento(em: p, tolerancia: 12 / t.escala)
+                    if let aoTocar {
+                        aoTocar(p)
+                    } else {
+                        selecionado = plano.elemento(em: p, tolerancia: 12 / t.escala)
+                    }
                 }
             )
             .overlay(alignment: .topLeading) {

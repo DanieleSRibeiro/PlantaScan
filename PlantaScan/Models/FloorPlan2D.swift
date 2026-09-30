@@ -131,6 +131,42 @@ extension FloorPlan2D {
         limites = limites.offsetBy(dx: d.dx, dy: d.dy)
     }
 
+    /// Gira em torno da origem e desloca: p' = R(rotacao) · p + (dx, dy).
+    mutating func transformar(rotacao: Double, dx: Double, dy: Double) {
+        let c = CGFloat(cos(rotacao))
+        let s = CGFloat(sin(rotacao))
+        let t = CGVector(dx: dx, dy: dy)
+        func p(_ q: CGPoint) -> CGPoint { CGPoint(x: q.x * c - q.y * s, y: q.x * s + q.y * c) + t }
+        func v(_ w: CGVector) -> CGVector { CGVector(dx: w.dx * c - w.dy * s, dy: w.dx * s + w.dy * c) }
+
+        for i in paredes.indices {
+            paredes[i].a = p(paredes[i].a)
+            paredes[i].b = p(paredes[i].b)
+            paredes[i].referencia = paredes[i].referencia.map(p)
+        }
+        for i in aberturas.indices {
+            aberturas[i].a = p(aberturas[i].a)
+            aberturas[i].b = p(aberturas[i].b)
+            aberturas[i].ladoInterno = v(aberturas[i].ladoInterno)
+        }
+        for i in objetos.indices {
+            objetos[i].cantos = objetos[i].cantos.map(p)
+            objetos[i].centro = p(objetos[i].centro)
+        }
+        pisos = pisos.map { $0.map(p) }
+        for i in rotulos.indices {
+            rotulos[i].ponto = p(rotulos[i].ponto)
+        }
+        centro = p(centro)
+        let pontos = paredes.flatMap { [$0.a, $0.b] } + pisos.flatMap { $0 } + objetos.flatMap(\.cantos)
+        limites = Geometria.limites(pontos)
+    }
+
+    mutating func aplicar(_ a: Alinhamento?) {
+        guard let a else { return }
+        transformar(rotacao: a.rotacao, dx: a.dx, dy: a.dy)
+    }
+
     /// Junta várias plantas que já estão no mesmo sistema de coordenadas.
     static func combinar(_ planos: [FloorPlan2D]) -> FloorPlan2D {
         guard let primeiro = planos.first else { return FloorPlan2D() }

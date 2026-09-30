@@ -100,7 +100,7 @@ struct RoomScanView: View {
             Spacer()
 
             Menu {
-                ForEach(1...max(andar + 1, 3), id: \.self) { n in
+                ForEach(Formato.faixaAndares, id: \.self) { n in
                     Button(Formato.andar(n)) { andar = n }
                 }
             } label: {

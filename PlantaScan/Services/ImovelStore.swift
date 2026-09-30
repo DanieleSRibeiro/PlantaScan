@@ -163,6 +163,7 @@ final class ImovelStore {
         comodo.sessao = sessao
         // Cômodos da mesma sessão compartilham o referencial, então o norte também vale para eles.
         comodo.norte = norte ?? imovel.comodos.first { $0.sessao == sessao && $0.norte != nil }?.norte
+        comodo.alinhamento = encaixeAutomatico(para: comodo, room: room, em: imovel)
         try Storage.salvarScan(room, comodoID: comodo.id, imovelID: imovelID)
         if let mapa {
             try? Storage.salvarMapa(mapa, sessao: sessao, imovelID: imovelID)
@@ -170,6 +171,33 @@ final class ImovelStore {
         imovel.comodos.append(comodo)
         atualizar(imovel)
         return comodo
+    }
+
+    /// Cômodo de uma sessão nova num andar que já tem cômodos: tenta encaixar pela porta em comum.
+    /// Cômodos seguintes da mesma sessão herdam o mesmo encaixe (mesmo referencial).
+    private func encaixeAutomatico(para comodo: Comodo, room: CapturedRoom, em imovel: Imovel) -> Alinhamento? {
+        let doAndar = imovel.comodos.filter { $0.andarOuPadrao == comodo.andarOuPadrao }
+        if let irmao = doAndar.first(where: { $0.chaveSessaoPropria == comodo.chaveSessaoPropria }) {
+            return irmao.alinhamento
+        }
+        guard !doAndar.isEmpty else { return nil }
+        let rooms = MontadorPlanta.carregarRooms(doAndar, imovelID: imovel.id)
+        let montagem = MontadorPlanta.montar(andar: comodo.andarOuPadrao, comodos: doAndar, rooms: rooms)
+        guard let chave = montagem.chavePrincipal else { return nil }
+        return Encaixe.porPorta(
+            movel: MontadorPlanta.planoBruto(comodo, room: room),
+            fixo: montagem.planoPrincipal,
+            referencia: chave
+        )
+    }
+
+    /// Define o encaixe de todos os cômodos de um grupo (mesma sessão) de uma vez.
+    func definirAlinhamento(_ alinhamento: Alinhamento?, grupo: String, imovelID: UUID) {
+        guard var imovel = imovel(id: imovelID) else { return }
+        for i in imovel.comodos.indices where imovel.comodos[i].chaveSessaoPropria == grupo {
+            imovel.comodos[i].alinhamento = alinhamento
+        }
+        atualizar(imovel)
     }
 
     func atualizarComodo(id: UUID, nome: String, tipo: TipoComodo, andar: Int, imovelID: UUID) {

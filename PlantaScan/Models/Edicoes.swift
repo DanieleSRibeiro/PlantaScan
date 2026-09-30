@@ -58,6 +58,16 @@ struct EdicaoAbertura: Codable, Hashable {
     var removido: Bool?
 }
 
+/// Rotação + deslocamento que leva a planta de um cômodo para o referencial de outro grupo.
+/// p' = R(rotacao) · p + (dx, dy)
+struct Alinhamento: Codable, Hashable {
+    /// Chave do grupo de referência (Comodo.chaveSessaoPropria do grupo principal).
+    var referencia: String?
+    var rotacao: Double
+    var dx: Double
+    var dy: Double
+}
+
 /// Porta/janela/vão adicionado pelo usuário numa parede escaneada.
 struct AberturaManual: Codable, Hashable, Identifiable {
     var id: UUID = UUID()

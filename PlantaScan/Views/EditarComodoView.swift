@@ -4,16 +4,20 @@ import SwiftUI
 struct EditarComodoView: View {
     let imovelID: UUID
     let comodo: Comodo
+    /// Chamado depois de apagar (ex.: para sair da tela da planta).
+    var aoApagar: (() -> Void)?
 
     @Environment(ImovelStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     @State private var nome: String
     @State private var tipo: TipoComodo
     @State private var andar: Int
+    @State private var confirmandoApagar = false
 
-    init(imovelID: UUID, comodo: Comodo) {
+    init(imovelID: UUID, comodo: Comodo, aoApagar: (() -> Void)? = nil) {
         self.imovelID = imovelID
         self.comodo = comodo
+        self.aoApagar = aoApagar
         _nome = State(initialValue: comodo.nome)
         _tipo = State(initialValue: comodo.tipo ?? .outro)
         _andar = State(initialValue: comodo.andarOuPadrao)
@@ -41,8 +45,26 @@ struct EditarComodoView: View {
                     .pickerStyle(.navigationLink)
                 }
                 Section("Andar") {
-                    Stepper(Formato.andar(andar), value: $andar, in: 1...20)
+                    Picker("Andar", selection: $andar) {
+                        ForEach(Formato.faixaAndares, id: \.self) { n in
+                            Text(Formato.andar(n)).tag(n)
+                        }
+                    }
                 }
+                Section {
+                    Button("Apagar cômodo", role: .destructive) {
+                        confirmandoApagar = true
+                    }
+                }
+            }
+            .confirmationDialog("Apagar \"\(comodo.nome)\"?", isPresented: $confirmandoApagar, titleVisibility: .visible) {
+                Button("Apagar", role: .destructive) {
+                    store.apagarComodos(ids: [comodo.id], imovelID: imovelID)
+                    aoApagar?()
+                    dismiss()
+                }
+            } message: {
+                Text("O scan e a planta deste cômodo serão apagados.")
             }
             .navigationTitle("Editar cômodo")
             .navigationBarTitleDisplayMode(.inline)

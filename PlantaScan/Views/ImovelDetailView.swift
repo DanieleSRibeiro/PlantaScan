@@ -9,6 +9,7 @@ struct ImovelDetailView: View {
     @State private var editando: Comodo?
     @State private var andarAtual = 1
     @State private var exportando = false
+    @State private var paraApagar: Comodo?
 
     var body: some View {
         if let imovel = store.imovel(id: imovelID) {
@@ -20,8 +21,6 @@ struct ImovelDetailView: View {
 
     private func conteudo(_ imovel: Imovel) -> some View {
         let andares = imovel.andares
-        let limiteAndar = max((andares.max() ?? 1) + 1, andarAtual, 2)
-        let continuar = store.sessaoParaContinuar(imovelID: imovelID)
 
         return List {
             Section {
@@ -51,7 +50,7 @@ struct ImovelDetailView: View {
 
             Section {
                 Picker("Andar do próximo scan", selection: $andarAtual) {
-                    ForEach(1...limiteAndar, id: \.self) { n in
+                    ForEach(Formato.faixaAndares, id: \.self) { n in
                         Text(Formato.andar(n)).tag(n)
                     }
                 }
@@ -88,6 +87,18 @@ struct ImovelDetailView: View {
                             } label: {
                                 Label("Editar nome, tipo e andar", systemImage: "pencil")
                             }
+                            Button(role: .destructive) {
+                                paraApagar = comodo
+                            } label: {
+                                Label("Apagar cômodo", systemImage: "trash")
+                            }
+                        }
+                        .swipeActions(edge: .trailing) {
+                            Button(role: .destructive) {
+                                paraApagar = comodo
+                            } label: {
+                                Label("Apagar", systemImage: "trash")
+                            }
                         }
                         .swipeActions(edge: .leading) {
                             Button {
@@ -97,9 +108,6 @@ struct ImovelDetailView: View {
                             }
                             .tint(.orange)
                         }
-                    }
-                    .onDelete { offsets in
-                        store.apagarComodos(ids: offsets.map { comodos[$0].id }, imovelID: imovelID)
                     }
                 } header: {
                     HStack {
@@ -138,17 +146,11 @@ struct ImovelDetailView: View {
                     Button {
                         scan = ConfigScan(modo: .casaToda, sessao: UUID(), mapa: nil, andar: andarAtual)
                     } label: {
-                        Label("Casa toda (vários cômodos)", systemImage: "square.grid.2x2")
+                        Label("Vários cômodos seguidos", systemImage: "square.grid.2x2")
                     }
                 }
-                if let continuar {
-                    Section("Continuar de onde parou") {
-                        Button {
-                            iniciarContinuacao(sessao: continuar.sessao)
-                        } label: {
-                            Label("Continuar scan (depois de \(continuar.comodo.nome))", systemImage: "arrow.forward.circle")
-                        }
-                    }
+                if !imovel.comodos.filter({ $0.andarOuPadrao == andarAtual }).isEmpty {
+                    Section("Cômodos novos são encaixados na planta pela porta em comum. Ajuste em \"Planta do andar\" → Encaixar.") {}
                 }
             } label: {
                 Label("Escanear · \(Formato.andar(andarAtual))", systemImage: "camera.viewfinder")
@@ -175,11 +177,18 @@ struct ImovelDetailView: View {
         .sheet(item: $editando) { comodo in
             EditarComodoView(imovelID: imovelID, comodo: comodo)
         }
-    }
-
-    private func iniciarContinuacao(sessao: UUID) {
-        let mapa = Storage.carregarMapa(sessao: sessao, imovelID: imovelID)
-        scan = ConfigScan(modo: .casaToda, sessao: mapa == nil ? UUID() : sessao, mapa: mapa, andar: andarAtual)
+        .confirmationDialog(
+            "Apagar cômodo?",
+            isPresented: Binding(get: { paraApagar != nil }, set: { if !$0 { paraApagar = nil } }),
+            titleVisibility: .visible,
+            presenting: paraApagar
+        ) { comodo in
+            Button("Apagar \"\(comodo.nome)\"", role: .destructive) {
+                store.apagarComodos(ids: [comodo.id], imovelID: imovelID)
+            }
+        } message: { _ in
+            Text("O scan e a planta deste cômodo serão apagados.")
+        }
     }
 
     /// Abre o endereço (com Eircode) no app Mapas.

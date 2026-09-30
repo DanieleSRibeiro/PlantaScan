@@ -14,7 +14,14 @@ enum Formato {
 
     static func metros(_ v: Double) -> String { "\(numero(v)) m" }
 
-    static func andar(_ n: Int) -> String { "\(n)º andar" }
+    static func andar(_ n: Int) -> String {
+        if n == 0 { return "Térreo" }
+        if n < 0 { return "\(-n)º subsolo" }
+        return "\(n)º andar"
+    }
+
+    /// Andares que podem ser escolhidos.
+    static let faixaAndares = Array(-2...20)
 
     /// "3 quartos · 2 banheiros · 1 cozinha"
     static func contagem(_ comodos: [Comodo]) -> String {

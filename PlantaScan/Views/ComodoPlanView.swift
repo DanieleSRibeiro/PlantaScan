@@ -7,6 +7,7 @@ struct ComodoPlanView: View {
     let comodoID: UUID
 
     @Environment(ImovelStore.self) private var store
+    @Environment(\.dismiss) private var sairDaTela
     @State private var room: CapturedRoom?
     @State private var erro: String?
     @State private var selecionado: ElementoPlano?
@@ -66,7 +67,7 @@ struct ComodoPlanView: View {
                     Button {
                         renomeandoComodo = true
                     } label: {
-                        Label("Editar nome e tipo", systemImage: "pencil")
+                        Label("Editar nome, tipo, andar ou apagar", systemImage: "pencil")
                     }
                     Button {
                         ajustandoNorte = true
@@ -92,7 +93,9 @@ struct ComodoPlanView: View {
             .presentationDetents([.medium])
         }
         .sheet(isPresented: $renomeandoComodo) {
-            EditarComodoView(imovelID: imovelID, comodo: comodo)
+            EditarComodoView(imovelID: imovelID, comodo: comodo) {
+                sairDaTela()
+            }
         }
         .alert(
             "Renomear objeto",

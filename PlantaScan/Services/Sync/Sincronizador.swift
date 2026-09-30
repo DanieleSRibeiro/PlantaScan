@@ -181,7 +181,12 @@ final class Sincronizador {
             }
             let (imovel, comodo) = par
             let room = try? Storage.carregarScan(comodoID: comodo.id, imovelID: imovel.id)
-            let planta = room.map { PlantaJSON.objeto(FloorPlanBuilder.construir($0, comodo: comodo)) }
+            // O site recebe a planta já encaixada, no referencial do grupo (campo sessao).
+            let planta = room.map { r -> [String: Any] in
+                var p = FloorPlanBuilder.construir(r, comodo: comodo)
+                p.aplicar(comodo.alinhamento)
+                return PlantaJSON.objeto(p)
+            }
             try await cliente.upsert("comodos", linhas: [linhaComodo(comodo, imovelID: imovel.id, uid: uid, planta: planta)])
 
             if !estado.arquivosEnviados.contains(comodo.id) {
@@ -338,8 +343,8 @@ final class Sincronizador {
             "tipo": (c.tipo ?? .outro).rawValue,
             "andar": c.andarOuPadrao,
             "area": c.area.map { $0 as Any } ?? NSNull(),
-            "sessao": c.sessao.map { $0.uuidString.lowercased() as Any } ?? NSNull(),
-            "norte": c.anguloNorte.map { $0 as Any } ?? NSNull(),
+            "sessao": c.chaveGrupo.lowercased(),
+            "norte": c.anguloNorte.map { ($0 + (c.alinhamento?.rotacao ?? 0)) as Any } ?? NSNull(),
             "planta": planta.map { $0 as Any } ?? NSNull(),
             "dados": dados ?? NSNull(),
             "data_scan": Self.iso.string(from: c.dataScan),
