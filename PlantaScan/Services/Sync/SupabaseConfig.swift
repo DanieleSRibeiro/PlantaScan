@@ -8,7 +8,7 @@ enum SupabaseConfig {
     static let chavePublica = "sb_publishable_npl4IoI9njCqvOvdYBinYQ_lmmNe5Cw"
     static let bucket = "plantascan"
     /// Endereço do site para abrir no computador.
-    static let site = URL(string: "https://id-preview--109a893c-077e-4b38-9974-a0300726fd09.lovable.app")!
+    static let site = URL(string: "https://planta-scan-web.lovable.app")!
 
     static var configurado: Bool { !chavePublica.isEmpty }
 }

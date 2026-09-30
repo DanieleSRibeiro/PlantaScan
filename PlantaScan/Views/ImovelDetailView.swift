@@ -10,6 +10,8 @@ struct ImovelDetailView: View {
     @State private var andarAtual = 1
     @State private var exportando = false
     @State private var paraApagar: Comodo?
+    @State private var paginaPro: LinkWeb?
+    @Environment(Sincronizador.self) private var sinc
 
     var body: some View {
         if let imovel = store.imovel(id: imovelID) {
@@ -136,6 +138,7 @@ struct ImovelDetailView: View {
             ExportarView(imovelID: imovelID)
         }
         .safeAreaInset(edge: .bottom) {
+            HStack(spacing: 10) {
             Menu {
                 Section("Novo scan · \(Formato.andar(andarAtual))") {
                     Button {
@@ -157,10 +160,23 @@ struct ImovelDetailView: View {
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
+
+            // Inspeção no módulo Pro do site (o imóvel precisa estar sincronizado).
+            if sinc.logado {
+                Button {
+                    paginaPro = .pro(imovelID: imovelID)
+                } label: {
+                    Label("Inspecionar", systemImage: "checklist")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+            }
+            }
             .controlSize(.large)
             .padding()
             .background(.bar)
         }
+        .paginaWeb($paginaPro)
         .onAppear {
             if let ultimo = imovel.comodos.last {
                 andarAtual = ultimo.andarOuPadrao

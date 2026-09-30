@@ -18,6 +18,7 @@ struct ImoveisListView: View {
     @Environment(Sincronizador.self) private var sinc
     @State private var editor: ImovelEditorAlvo?
     @State private var mostrandoConta = false
+    @State private var paginaPro: LinkWeb?
     @State private var paraApagar: Imovel?
     @State private var busca = ""
     @State private var importando = false
@@ -85,6 +86,13 @@ struct ImoveisListView: View {
                         }
                     }
                 }
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        paginaPro = .pro()
+                    } label: {
+                        Label("Inspeções (Pro)", systemImage: "checklist")
+                    }
+                }
                 ToolbarItem(placement: .primaryAction) {
                     Menu {
                         Button {
@@ -108,6 +116,7 @@ struct ImoveisListView: View {
             .sheet(isPresented: $mostrandoConta) {
                 ContaView()
             }
+            .paginaWeb($paginaPro)
             .fileImporter(isPresented: $importando, allowedContentTypes: Self.tiposPlanilha) { resultado in
                 importar(resultado)
             }
