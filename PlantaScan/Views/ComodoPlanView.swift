@@ -198,6 +198,14 @@ struct ComodoPlanView: View {
                     .buttonStyle(.bordered)
                 }
             }
+            Button(role: .destructive) {
+                store.removerParede(id: sel.id, comodoID: comodoID, imovelID: imovelID)
+                selecionado = nil
+            } label: {
+                Label("Apagar parede (n\u{e3}o \u{e9} deste c\u{f4}modo)", systemImage: "trash")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
         case .objeto:
             HStack {
                 Button {
@@ -254,7 +262,7 @@ struct ComodoPlanView: View {
         do {
             let r = try Storage.carregarScan(comodoID: comodoID, imovelID: imovelID)
             room = r
-            let area = FloorPlanBuilder.construir(r).area
+            let area = FloorPlanBuilder.construir(r, comodo: comodo).area
             store.definirArea(area, comodoID: comodoID, imovelID: imovelID)
         } catch {
             erro = error.localizedDescription

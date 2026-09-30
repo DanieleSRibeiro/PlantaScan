@@ -35,6 +35,8 @@ struct Comodo: Identifiable, Codable, Hashable {
     var aberturasManuais: [AberturaManual]?
     /// Objetos detectados que o usuário removeu.
     var objetosRemovidos: [UUID]?
+    /// Paredes removidas (ex.: parede de outro cômodo vista pela porta aberta).
+    var paredesRemovidas: [UUID]?
     /// Nomes personalizados de objetos, por id.
     var nomesObjetos: [String: String]?
     /// Direção do norte verdadeiro no plano XZ do scan (radianos, medida pela bússola durante o scan).

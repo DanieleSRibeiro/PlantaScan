@@ -107,6 +107,26 @@ enum FloorPlanBuilder {
     // MARK: Edições do usuário
 
     static func aplicar(_ comodo: Comodo, em plano: inout FloorPlan2D) {
+        var removidos = 0
+
+        // Paredes removidas (e as aberturas que estavam nelas); o piso é refeito pelas paredes que ficaram.
+        let paredesRemovidas = Set(comodo.paredesRemovidas ?? [])
+        if !paredesRemovidas.isEmpty {
+            let removidas = plano.paredes.filter { paredesRemovidas.contains($0.id) }
+            plano.paredes.removeAll { paredesRemovidas.contains($0.id) }
+            plano.aberturas.removeAll { ab in
+                let meio = CGPoint.media(ab.a, ab.b)
+                return removidas.contains { Geometria.distancia(ponto: meio, a: $0.a, b: $0.b) < 0.15 }
+            }
+            removidos += removidas.count
+            let contorno = poligonoDasParedes(plano.paredes)
+            if contorno.count >= 3 {
+                plano.pisos = [contorno]
+                plano.area = Geometria.area(contorno)
+                plano.centro = Geometria.media(plano.paredes.flatMap { [$0.a, $0.b] })
+            }
+        }
+
         for m in comodo.aberturasManuais ?? [] {
             guard let parede = plano.paredes.first(where: { $0.id == m.paredeID }) else { continue }
             let u = (parede.b - parede.a).normalizado
@@ -127,7 +147,6 @@ enum FloorPlanBuilder {
         }
 
         let edicoes = comodo.edicoes ?? [:]
-        var removidos = 0
         plano.aberturas = plano.aberturas.compactMap { ab in
             guard let e = edicoes[ab.id.uuidString] else { return ab }
             if e.removido == true {

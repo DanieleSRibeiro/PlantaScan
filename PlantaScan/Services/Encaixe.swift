@@ -26,30 +26,68 @@ enum Encaixe {
                     let candidato = Alinhamento(referencia: referencia, rotacao: rotacao, dx: Double(cb.x) - rx, dy: Double(cb.y) - ry)
                     var teste = movel
                     teste.aplicar(candidato)
-                    let pontuacao = Double(sobreposicao(teste, fixo)) * 10 + diferenca + (rotacao == base ? 0 : 0.05)
+                    let sobreposto = fracaoSobreposta(teste, fixo)
+                    let pontuacao = sobreposto * 10 + diferenca + (rotacao == base ? 0 : 0.05)
+                    // Encaixe que invade o outro cômodo (mais de 15% da área) não serve.
+                    guard sobreposto < 0.15 else { continue }
                     if melhor == nil || pontuacao < melhor!.pontuacao {
                         melhor = (pontuacao, candidato)
                     }
                 }
             }
         }
-        // Encaixe que invade o outro cômodo não serve.
-        guard let m = melhor, m.pontuacao < 10 else { return nil }
-        return m.alinhamento
+        return melhor?.alinhamento
     }
 
-    /// Quantos pontos do piso do cômodo movido caem dentro do piso do fixo.
-    private static func sobreposicao(_ movel: FloorPlan2D, _ fixo: FloorPlan2D) -> Int {
-        var n = 0
+    /// Fração da área do cômodo movido que cai dentro de algum piso do fixo (amostragem em grade).
+    static func fracaoSobreposta(_ movel: FloorPlan2D, _ fixo: FloorPlan2D) -> Double {
+        var total = 0
+        var dentro = 0
         for piso in movel.pisos {
-            let centro = Geometria.centroidePoligono(piso)
-            // Pontos puxados 20% para o centro, para não contar os cantos encostados na parede comum.
-            let amostras = piso.map { q in CGPoint(x: centro.x + (q.x - centro.x) * 0.8, y: centro.y + (q.y - centro.y) * 0.8) } + [centro]
-            for p in amostras where fixo.pisos.contains(where: { Geometria.contem($0, p) }) {
-                n += 1
+            let l = Geometria.limites(piso)
+            let passo = max(min(l.width, l.height) / 10, 0.1)
+            var y = l.minY + passo / 2
+            while y < l.maxY {
+                var x = l.minX + passo / 2
+                while x < l.maxX {
+                    let p = CGPoint(x: x, y: y)
+                    if Geometria.contem(piso, p) {
+                        total += 1
+                        if fixo.pisos.contains(where: { Geometria.contem($0, p) }) {
+                            dentro += 1
+                        }
+                    }
+                    x += passo
+                }
+                y += passo
             }
         }
-        return n
+        return total == 0 ? 1 : Double(dentro) / Double(total)
+    }
+
+    /// Paredes e objetos do cômodo novo que pertencem a cômodos já escaneados
+    /// (capturados pela porta aberta). As plantas precisam estar no mesmo referencial.
+    static func estranhos(novo: FloorPlan2D, existentes: [FloorPlan2D]) -> (paredes: [UUID], objetos: [UUID]) {
+        let pisosAntigos = existentes.flatMap(\.pisos)
+        guard !pisosAntigos.isEmpty else { return ([], []) }
+        func noAntigo(_ p: CGPoint) -> Bool { pisosAntigos.contains { Geometria.contem($0, p) } }
+        func noNovo(_ p: CGPoint) -> Bool { novo.pisos.isEmpty || novo.pisos.contains { Geometria.contem($0, p) } }
+        /// Área que é só do cômodo novo.
+        func proprio(_ p: CGPoint) -> Bool { noNovo(p) && !noAntigo(p) }
+
+        var paredes: [UUID] = []
+        for w in novo.paredes {
+            let meio = CGPoint.media(w.a, w.b)
+            let n = (w.b - w.a).normalizado.perpendicular
+            let lado1 = meio + n * 0.25
+            let lado2 = meio - n * 0.25
+            // A parede comum tem um lado no cômodo novo; a parede de outro cômodo não tem.
+            if !proprio(lado1) && !proprio(lado2) && (noAntigo(lado1) || noAntigo(lado2)) {
+                paredes.append(w.id)
+            }
+        }
+        let objetos = novo.objetos.filter { noAntigo($0.centro) }.map(\.id)
+        return (paredes, objetos)
     }
 
     /// Gira o alinhamento em torno de um ponto (coordenadas já alinhadas).

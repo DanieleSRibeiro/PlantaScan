@@ -164,6 +164,7 @@ final class ImovelStore {
         // Cômodos da mesma sessão compartilham o referencial, então o norte também vale para eles.
         comodo.norte = norte ?? imovel.comodos.first { $0.sessao == sessao && $0.norte != nil }?.norte
         comodo.alinhamento = encaixeAutomatico(para: comodo, room: room, em: imovel)
+        limparVizinhos(&comodo, room: room, em: imovel)
         try Storage.salvarScan(room, comodoID: comodo.id, imovelID: imovelID)
         if let mapa {
             try? Storage.salvarMapa(mapa, sessao: sessao, imovelID: imovelID)
@@ -189,6 +190,43 @@ final class ImovelStore {
             fixo: montagem.planoPrincipal,
             referencia: chave
         )
+    }
+
+    /// Remove do cômodo novo as paredes e objetos que são de cômodos já escaneados no mesmo
+    /// referencial (vistos pela porta aberta) e recalcula a área.
+    private func limparVizinhos(_ comodo: inout Comodo, room: CapturedRoom, em imovel: Imovel) {
+        let vizinhos = imovel.comodos.filter {
+            $0.andarOuPadrao == comodo.andarOuPadrao && $0.chaveGrupo == comodo.chaveGrupo
+        }
+        guard !vizinhos.isEmpty else { return }
+        let rooms = MontadorPlanta.carregarRooms(vizinhos, imovelID: imovel.id)
+        let existentes: [FloorPlan2D] = vizinhos.compactMap { v in
+            guard let r = rooms[v.id] else { return nil }
+            var p = MontadorPlanta.planoBruto(v, room: r)
+            p.aplicar(v.alinhamento)
+            return p
+        }
+        var novo = MontadorPlanta.planoBruto(comodo, room: room)
+        novo.aplicar(comodo.alinhamento)
+        let (paredes, objetos) = Encaixe.estranhos(novo: novo, existentes: existentes)
+        guard !paredes.isEmpty || !objetos.isEmpty else { return }
+        if !paredes.isEmpty { comodo.paredesRemovidas = paredes }
+        if !objetos.isEmpty { comodo.objetosRemovidos = objetos }
+        comodo.area = FloorPlanBuilder.construir(room, comodo: comodo).area
+    }
+
+    func removerParede(id: UUID, comodoID: UUID, imovelID: UUID) {
+        alterarComodo(comodoID, imovelID: imovelID) { c in
+            c.paredesRemovidas = (c.paredesRemovidas ?? []) + [id]
+        }
+        recalcularArea(comodoID: comodoID, imovelID: imovelID)
+    }
+
+    /// Área do cômodo com as edições (paredes removidas mudam o piso).
+    private func recalcularArea(comodoID: UUID, imovelID: UUID) {
+        guard let c = imovel(id: imovelID)?.comodos.first(where: { $0.id == comodoID }),
+              let room = try? Storage.carregarScan(comodoID: comodoID, imovelID: imovelID) else { return }
+        definirArea(FloorPlanBuilder.construir(room, comodo: c).area, comodoID: comodoID, imovelID: imovelID)
     }
 
     /// Define o encaixe de todos os cômodos de um grupo (mesma sessão) de uma vez.
@@ -289,8 +327,10 @@ final class ImovelStore {
     }
 
     func restaurarRemovidos(comodoID: UUID, imovelID: UUID) {
+        defer { recalcularArea(comodoID: comodoID, imovelID: imovelID) }
         alterarComodo(comodoID, imovelID: imovelID) { c in
             c.objetosRemovidos = nil
+            c.paredesRemovidas = nil
             if var edicoes = c.edicoes {
                 for (chave, e) in edicoes where e.removido == true {
                     edicoes[chave]?.removido = nil

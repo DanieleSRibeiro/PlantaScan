@@ -268,6 +268,7 @@ final class ScanController: UIViewController, RoomCaptureViewDelegate {
     private var capturando = false
     private var aguardandoRelocalizacao = false
     private var iniciou = false
+    private var comodosCapturados = 0
     private let bussola = BussolaService()
     private var timer: Timer?
 
@@ -331,9 +332,25 @@ final class ScanController: UIViewController, RoomCaptureViewDelegate {
 
     func iniciarCaptura() {
         aguardandoRelocalizacao = false
-        guard !capturando, let cv = captureView else { return }
+        guard !capturando else { return }
+        // Reaproveitar a mesma RoomCaptureView depois de um cômodo pronto deixava a tela preta
+        // no terceiro cômodo: cada cômodo ganha uma vista nova, na mesma ARSession (mesmo referencial).
+        if comodosCapturados > 0 {
+            recriarCaptureView()
+        }
+        guard let cv = captureView else { return }
         cv.captureSession.run(configuration: RoomCaptureSession.Configuration())
         capturando = true
+    }
+
+    private func recriarCaptureView() {
+        captureView?.delegate = nil
+        captureView?.removeFromSuperview()
+        let cv = RoomCaptureView(frame: view.bounds, arSession: sessaoAR)
+        cv.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        cv.delegate = self
+        view.insertSubview(cv, at: 0)
+        captureView = cv
     }
 
     /// Termina o cômodo atual mantendo a ARSession ativa (para o próximo cômodo ficar alinhado).
@@ -365,6 +382,7 @@ final class ScanController: UIViewController, RoomCaptureViewDelegate {
             aoTerminar?(.failure(error))
             return
         }
+        comodosCapturados += 1
         // Guarda o mapa do ambiente para poder continuar esta sessão depois.
         sessaoAR.getCurrentWorldMap { [weak self] mapa, _ in
             DispatchQueue.main.async {
