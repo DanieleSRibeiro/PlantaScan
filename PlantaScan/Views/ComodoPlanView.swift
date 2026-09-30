@@ -1,3 +1,4 @@
+import QuickLook
 import SwiftUI
 import RoomPlan
 
@@ -15,6 +16,7 @@ struct ComodoPlanView: View {
     @State private var renomeandoObjeto: ElementoPlano?
     @State private var renomeandoComodo = false
     @State private var ajustandoNorte = false
+    @State private var video: URL?
     @State private var novoNome = ""
     @AppStorage("mostrarNomeComodo") private var mostrarNomeComodo = true
     @AppStorage("mostrarNomesObjetos") private var mostrarNomesObjetos = true
@@ -74,6 +76,13 @@ struct ComodoPlanView: View {
                     } label: {
                         Label("Ajustar norte…", systemImage: "location.north.line")
                     }
+                    if Storage.existeVideo(comodoID: comodoID, imovelID: imovelID) {
+                        Button {
+                            video = Storage.urlVideo(comodoID: comodoID, imovelID: imovelID)
+                        } label: {
+                            Label("Ver filmagem do scan", systemImage: "video")
+                        }
+                    }
                     if plano.quantidadeRemovidos > 0 {
                         Button {
                             store.restaurarRemovidos(comodoID: comodoID, imovelID: imovelID)
@@ -86,6 +95,7 @@ struct ComodoPlanView: View {
                 }
             }
         }
+        .quickLookPreview($video)
         .sheet(isPresented: $ajustandoNorte) {
             AjusteNorteView(medido: comodo.norte, ajusteInicial: comodo.ajusteNorte ?? 0) { graus in
                 store.ajustarNorte(graus, comodoID: comodoID, imovelID: imovelID)

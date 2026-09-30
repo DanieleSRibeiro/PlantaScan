@@ -74,6 +74,19 @@ struct ExportarView: View {
                     } footer: {
                         Text("Abre o modelo 3D do cômodo; dá para ver em realidade aumentada e compartilhar.")
                     }
+
+                    let comVideo = imovel.comodos.filter { Storage.existeVideo(comodoID: $0.id, imovelID: imovelID) }
+                    if !comVideo.isEmpty {
+                        Section("Filmagem do scan") {
+                            ForEach(comVideo) { c in
+                                Button {
+                                    arquivo = Storage.urlVideo(comodoID: c.id, imovelID: imovelID)
+                                } label: {
+                                    Label(c.nome, systemImage: "video")
+                                }
+                            }
+                        }
+                    }
                 }
             }
             .navigationTitle("Exportar")

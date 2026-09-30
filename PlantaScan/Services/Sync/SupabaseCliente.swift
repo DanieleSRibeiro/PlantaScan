@@ -120,6 +120,25 @@ final class SupabaseCliente {
                              cabecalhos: ["Content-Type": tipo, "x-upsert": "true"])
     }
 
+    /// Envia um arquivo grande direto do disco (vídeos), sem carregá-lo na memória.
+    func enviarArquivo(de arquivo: URL, caminho: String, tipo: String) async throws {
+        let url = SupabaseConfig.url.appendingPathComponent("storage/v1/object/\(SupabaseConfig.bucket)/\(caminho)")
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.timeoutInterval = 600
+        req.setValue(SupabaseConfig.chavePublica, forHTTPHeaderField: "apikey")
+        req.setValue("Bearer \(try await tokenValido())", forHTTPHeaderField: "Authorization")
+        req.setValue(tipo, forHTTPHeaderField: "Content-Type")
+        req.setValue("true", forHTTPHeaderField: "x-upsert")
+        let (data, resposta) = try await URLSession.shared.upload(for: req, fromFile: arquivo)
+        let status = (resposta as? HTTPURLResponse)?.statusCode ?? 0
+        guard (200..<300).contains(status) else {
+            let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+            let msg = (json?["message"] as? String) ?? (json?["error"] as? String) ?? "Erro \(status) ao enviar o vídeo."
+            throw ErroSupabase.servidor(msg)
+        }
+    }
+
     func baixarArquivo(caminho: String) async throws -> Data {
         try await chamar("GET", "storage/v1/object/authenticated/\(SupabaseConfig.bucket)/\(caminho)")
     }

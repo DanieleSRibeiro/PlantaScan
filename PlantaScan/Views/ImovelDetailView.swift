@@ -183,10 +183,10 @@ struct ImovelDetailView: View {
             }
         }
         .fullScreenCover(item: $scan) { config in
-            RoomScanView(config: config) { room, mapa, norte, andar, sessao in
+            RoomScanView(config: config) { room, mapa, norte, andar, sessao, video in
                 try store.adicionarComodo(
                     room: room, imovelID: imovelID, andar: andar,
-                    norte: norte, sessao: sessao, mapa: mapa
+                    norte: norte, sessao: sessao, mapa: mapa, video: video
                 ).nome
             }
         }

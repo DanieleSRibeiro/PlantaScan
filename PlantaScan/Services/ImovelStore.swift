@@ -150,7 +150,7 @@ final class ImovelStore {
 
     /// Salva um cômodo escaneado, identificando o tipo e dando um nome automático ("Quarto 1").
     @discardableResult
-    func adicionarComodo(room: CapturedRoom, imovelID: UUID, andar: Int, norte: Double?, sessao: UUID, mapa: ARWorldMap?) throws -> Comodo {
+    func adicionarComodo(room: CapturedRoom, imovelID: UUID, andar: Int, norte: Double?, sessao: UUID, mapa: ARWorldMap?, video: URL? = nil) throws -> Comodo {
         guard var imovel = imovel(id: imovelID) else {
             throw CocoaError(.fileNoSuchFile)
         }
@@ -168,6 +168,11 @@ final class ImovelStore {
         try Storage.salvarScan(room, comodoID: comodo.id, imovelID: imovelID)
         if let mapa {
             try? Storage.salvarMapa(mapa, sessao: sessao, imovelID: imovelID)
+        }
+        if let video {
+            let destino = Storage.urlVideo(comodoID: comodo.id, imovelID: imovelID)
+            try? FileManager.default.removeItem(at: destino)
+            try? FileManager.default.moveItem(at: video, to: destino)
         }
         imovel.comodos.append(comodo)
         atualizar(imovel)

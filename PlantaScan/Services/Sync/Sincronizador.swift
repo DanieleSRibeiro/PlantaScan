@@ -217,6 +217,18 @@ final class Sincronizador {
         if let modelo = try? Data(contentsOf: Storage.urlModelo(comodoID: comodo.id, imovelID: imovelID)) {
             try await cliente.enviarArquivo(modelo, caminho: "\(base).usdz", tipo: "model/vnd.usdz+zip")
         }
+        // Filmagem do scan: um erro no vídeo não impede o resto da sincronização.
+        if Storage.existeVideo(comodoID: comodo.id, imovelID: imovelID) {
+            do {
+                try await cliente.enviarArquivo(
+                    de: Storage.urlVideo(comodoID: comodo.id, imovelID: imovelID),
+                    caminho: "\(base).mp4",
+                    tipo: "video/mp4"
+                )
+            } catch {
+                ultimoErro = "Vídeo do scan não enviado: \(error.localizedDescription)"
+            }
+        }
     }
 
     /// Envia o PDF do imóvel para aparecer no site ("Baixar PDF").

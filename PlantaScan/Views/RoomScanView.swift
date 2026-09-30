@@ -21,7 +21,7 @@ struct ConfigScan: Identifiable {
 struct RoomScanView: View {
     let config: ConfigScan
     /// Salva o cômodo e devolve o nome dado a ele.
-    let aoCapturar: (_ room: CapturedRoom, _ mapa: ARWorldMap?, _ norte: Double?, _ andar: Int, _ sessao: UUID) throws -> String
+    let aoCapturar: (_ room: CapturedRoom, _ mapa: ARWorldMap?, _ norte: Double?, _ andar: Int, _ sessao: UUID, _ video: URL?) throws -> String
 
     @Environment(\.dismiss) private var dismiss
     @State private var holder = ScanControllerHolder()
@@ -37,7 +37,7 @@ struct RoomScanView: View {
         case relocalizando, escaneando, processando, fim
     }
 
-    init(config: ConfigScan, aoCapturar: @escaping (CapturedRoom, ARWorldMap?, Double?, Int, UUID) throws -> String) {
+    init(config: ConfigScan, aoCapturar: @escaping (CapturedRoom, ARWorldMap?, Double?, Int, UUID, URL?) throws -> String) {
         self.config = config
         self.aoCapturar = aoCapturar
         _fase = State(initialValue: config.mapa == nil ? .escaneando : .relocalizando)
@@ -199,7 +199,7 @@ struct RoomScanView: View {
                 mostrarAviso("Nenhuma parede detectada — cômodo descartado")
             } else {
                 do {
-                    let nome = try aoCapturar(room, mapa, holder.controller?.norteMedido, andar, sessao)
+                    let nome = try aoCapturar(room, mapa, holder.controller?.norteMedido, andar, sessao, holder.controller?.ultimoVideo)
                     salvos.append(nome)
                     mostrarAviso("✓ \(nome) salvo")
                 } catch {
@@ -271,9 +271,14 @@ final class ScanController: UIViewController, RoomCaptureViewDelegate {
     private var comodosCapturados = 0
     private let bussola = BussolaService()
     private var timer: Timer?
+    private let gravador = GravadorScan()
+    private var linkGravacao: CADisplayLink?
+    private var videoPendente: DispatchGroup?
 
     /// Direção do norte verdadeiro no plano do scan (radianos), se foi possível medir.
     var norteMedido: Double? { bussola.resultado }
+    /// Vídeo do último cômodo capturado (arquivo temporário).
+    private(set) var ultimoVideo: URL?
 
     init(mapaInicial: ARWorldMap?) {
         self.mapaInicial = mapaInicial
@@ -341,6 +346,32 @@ final class ScanController: UIViewController, RoomCaptureViewDelegate {
         guard let cv = captureView else { return }
         cv.captureSession.run(configuration: RoomCaptureSession.Configuration())
         capturando = true
+
+        // Grava a filmagem do cômodo (30 quadros por segundo).
+        ultimoVideo = nil
+        gravador.iniciar()
+        let link = CADisplayLink(target: self, selector: #selector(gravarQuadro))
+        link.preferredFramesPerSecond = 30
+        link.add(to: .main, forMode: .common)
+        linkGravacao = link
+    }
+
+    @objc private func gravarQuadro() {
+        guard capturando, let frame = sessaoAR.currentFrame else { return }
+        gravador.adicionar(frame)
+    }
+
+    private func pararGravacao() {
+        linkGravacao?.invalidate()
+        linkGravacao = nil
+        guard gravador.gravando else { return }
+        let grupo = DispatchGroup()
+        grupo.enter()
+        videoPendente = grupo
+        gravador.finalizar { [weak self] url in
+            self?.ultimoVideo = url
+            grupo.leave()
+        }
     }
 
     private func recriarCaptureView() {
@@ -357,6 +388,7 @@ final class ScanController: UIViewController, RoomCaptureViewDelegate {
     func finalizarComodo() {
         guard capturando else { return }
         capturando = false
+        pararGravacao()
         captureView?.captureSession.stop(pauseARSession: false)
     }
 
@@ -364,6 +396,9 @@ final class ScanController: UIViewController, RoomCaptureViewDelegate {
         timer?.invalidate()
         timer = nil
         bussola.parar()
+        linkGravacao?.invalidate()
+        linkGravacao = nil
+        gravador.cancelar()
         if capturando {
             captureView?.captureSession.stop()
             capturando = false
@@ -386,7 +421,12 @@ final class ScanController: UIViewController, RoomCaptureViewDelegate {
         // Guarda o mapa do ambiente para poder continuar esta sessão depois.
         sessaoAR.getCurrentWorldMap { [weak self] mapa, _ in
             DispatchQueue.main.async {
-                self?.aoTerminar?(.success((processedResult, mapa)))
+                // Espera o vídeo do cômodo terminar de ser gravado.
+                let grupo = self?.videoPendente ?? DispatchGroup()
+                grupo.notify(queue: .main) {
+                    self?.videoPendente = nil
+                    self?.aoTerminar?(.success((processedResult, mapa)))
+                }
             }
         }
     }

@@ -92,6 +92,16 @@ enum Storage {
     static func apagarScan(comodoID: UUID, imovelID: UUID) {
         try? fm.removeItem(at: urlScan(comodoID: comodoID, imovelID: imovelID))
         try? fm.removeItem(at: urlModelo(comodoID: comodoID, imovelID: imovelID))
+        try? fm.removeItem(at: urlVideo(comodoID: comodoID, imovelID: imovelID))
+    }
+
+    /// Filmagem do scan do cômodo.
+    static func urlVideo(comodoID: UUID, imovelID: UUID) -> URL {
+        pasta(imovelID: imovelID).appendingPathComponent("\(comodoID.uuidString).mp4")
+    }
+
+    static func existeVideo(comodoID: UUID, imovelID: UUID) -> Bool {
+        fm.fileExists(atPath: urlVideo(comodoID: comodoID, imovelID: imovelID).path)
     }
 
     // MARK: Mapa do ambiente (para continuar o scan depois)
