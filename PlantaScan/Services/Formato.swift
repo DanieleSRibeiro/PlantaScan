@@ -16,6 +16,17 @@ enum Formato {
 
     static func andar(_ n: Int) -> String { "\(n)º andar" }
 
+    /// "3 quartos · 2 banheiros · 1 cozinha"
+    static func contagem(_ comodos: [Comodo]) -> String {
+        var partes: [String] = []
+        for tipo in TipoComodo.allCases {
+            let n = comodos.filter { ($0.tipo ?? .outro) == tipo }.count
+            guard n > 0 else { continue }
+            partes.append(n == 1 ? "1 \(tipo.nome.lowercased())" : "\(n) \(tipo.plural)")
+        }
+        return partes.joined(separator: " · ")
+    }
+
     static func area(_ v: Double) -> String { "\(numero(v)) m²" }
 
     /// "L 0,80 × A 2,10 × P 0,05 m" (profundidade omitida quando não medida).

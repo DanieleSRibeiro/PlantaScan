@@ -19,6 +19,8 @@ struct FloorPlan2D {
     var limites: CGRect = CGRect(x: -1, y: -1, width: 2, height: 2)
     var centro: CGPoint = .zero
     var quantidadeRemovidos = 0
+    /// Nomes e áreas dos cômodos (planta de vários cômodos).
+    var rotulos: [RotuloComodo] = []
 
     var vazio: Bool { paredes.isEmpty && objetos.isEmpty }
 
@@ -33,11 +35,19 @@ struct FloorPlan2D {
     }
 }
 
+struct RotuloComodo {
+    var ponto: CGPoint
+    var nome: String
+    var area: Double
+}
+
 struct Parede2D: Identifiable {
     let id: UUID
     var a: CGPoint
     var b: CGPoint
     var dimensoes: Dimensoes
+    /// Centro do cômodo a que a parede pertence (para desenhar a cota do lado de fora).
+    var referencia: CGPoint? = nil
 }
 
 struct Abertura2D: Identifiable {
@@ -75,9 +85,50 @@ struct Abertura2D: Identifiable {
 struct Objeto2D: Identifiable {
     let id: UUID
     var nome: String
-    let cantos: [CGPoint]
-    let centro: CGPoint
+    var cantos: [CGPoint]
+    var centro: CGPoint
     let dimensoes: Dimensoes
+}
+
+extension FloorPlan2D {
+    /// Move toda a planta (usado para pôr lado a lado cômodos de sessões diferentes).
+    mutating func deslocar(_ d: CGVector) {
+        for i in paredes.indices {
+            paredes[i].a = paredes[i].a + d
+            paredes[i].b = paredes[i].b + d
+            paredes[i].referencia = paredes[i].referencia.map { $0 + d }
+        }
+        for i in aberturas.indices {
+            aberturas[i].a = aberturas[i].a + d
+            aberturas[i].b = aberturas[i].b + d
+        }
+        for i in objetos.indices {
+            objetos[i].cantos = objetos[i].cantos.map { $0 + d }
+            objetos[i].centro = objetos[i].centro + d
+        }
+        pisos = pisos.map { $0.map { $0 + d } }
+        for i in rotulos.indices {
+            rotulos[i].ponto = rotulos[i].ponto + d
+        }
+        centro = centro + d
+        limites = limites.offsetBy(dx: d.dx, dy: d.dy)
+    }
+
+    /// Junta várias plantas que já estão no mesmo sistema de coordenadas.
+    static func combinar(_ planos: [FloorPlan2D]) -> FloorPlan2D {
+        guard let primeiro = planos.first else { return FloorPlan2D() }
+        var r = FloorPlan2D()
+        r.paredes = planos.flatMap(\.paredes)
+        r.aberturas = planos.flatMap(\.aberturas)
+        r.objetos = planos.flatMap(\.objetos)
+        r.pisos = planos.flatMap(\.pisos)
+        r.rotulos = planos.flatMap(\.rotulos)
+        r.area = planos.reduce(0) { $0 + $1.area }
+        r.quantidadeRemovidos = planos.reduce(0) { $0 + $1.quantidadeRemovidos }
+        r.limites = planos.dropFirst().reduce(primeiro.limites) { $0.union($1.limites) }
+        r.centro = Geometria.media(planos.map(\.centro))
+        return r
+    }
 }
 
 /// Elemento tocado na planta.

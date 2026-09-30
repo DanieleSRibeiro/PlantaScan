@@ -59,6 +59,9 @@ enum FloorPlanBuilder {
         plano.centro = Geometria.media(pontosParedes + contornos.flatMap { $0 })
 
         let centro = plano.centro
+        for i in plano.paredes.indices {
+            plano.paredes[i].referencia = centro
+        }
         func abertura(_ s: CapturedRoom.Surface, _ tipo: TipoAbertura) -> Abertura2D {
             let (a, b) = extremos(s.transform, largura: s.dimensions.x)
             let n = (b - a).normalizado.perpendicular

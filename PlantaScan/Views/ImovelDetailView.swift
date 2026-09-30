@@ -5,9 +5,8 @@ struct ImovelDetailView: View {
     let imovelID: UUID
 
     @Environment(ImovelStore.self) private var store
-    @State private var escaneando = false
-    @State private var renomeando: Comodo?
-    @State private var novoNome = ""
+    @State private var scan: ConfigScan?
+    @State private var editando: Comodo?
     @State private var andarAtual = 1
 
     var body: some View {
@@ -21,6 +20,7 @@ struct ImovelDetailView: View {
     private func conteudo(_ imovel: Imovel) -> some View {
         let andares = imovel.andares
         let limiteAndar = max((andares.max() ?? 1) + 1, andarAtual, 2)
+        let continuar = store.sessaoParaContinuar(imovelID: imovelID)
 
         return List {
             Section {
@@ -39,6 +39,12 @@ struct ImovelDetailView: View {
                 if !imovel.comodos.isEmpty {
                     LabeledContent("Área total", value: Formato.area(imovel.areaTotal))
                     LabeledContent("Cômodos", value: "\(imovel.comodos.count)")
+                    let contagem = Formato.contagem(imovel.comodos)
+                    if !contagem.isEmpty {
+                        Text(contagem)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
 
@@ -54,7 +60,7 @@ struct ImovelDetailView: View {
 
             if imovel.comodos.isEmpty {
                 Section("Cômodos") {
-                    Text("Nenhum cômodo escaneado ainda. Toque em \"Escanear cômodo\".")
+                    Text("Nenhum cômodo escaneado ainda. Toque em \"Escanear\" e escolha um cômodo ou a casa toda.")
                         .foregroundStyle(.secondary)
                 }
             }
@@ -63,6 +69,12 @@ struct ImovelDetailView: View {
                 let comodos = imovel.comodos.filter { $0.andarOuPadrao == andar }
                 let area = comodos.reduce(0) { $0 + ($1.area ?? 0) }
                 Section {
+                    NavigationLink {
+                        AndarPlanView(imovelID: imovelID, andar: andar)
+                    } label: {
+                        Label("Planta do \(Formato.andar(andar))", systemImage: "map")
+                            .fontWeight(.medium)
+                    }
                     ForEach(comodos) { comodo in
                         NavigationLink {
                             ComodoPlanView(imovelID: imovelID, comodoID: comodo.id)
@@ -71,25 +83,16 @@ struct ImovelDetailView: View {
                         }
                         .contextMenu {
                             Button {
-                                iniciarRenomear(comodo)
+                                editando = comodo
                             } label: {
-                                Label("Renomear", systemImage: "pencil")
-                            }
-                            Menu {
-                                ForEach(1...limiteAndar, id: \.self) { n in
-                                    Button(Formato.andar(n)) {
-                                        store.moverComodo(id: comodo.id, paraAndar: n, imovelID: imovelID)
-                                    }
-                                }
-                            } label: {
-                                Label("Mover para andar", systemImage: "arrow.up.arrow.down")
+                                Label("Editar nome, tipo e andar", systemImage: "pencil")
                             }
                         }
                         .swipeActions(edge: .leading) {
                             Button {
-                                iniciarRenomear(comodo)
+                                editando = comodo
                             } label: {
-                                Label("Renomear", systemImage: "pencil")
+                                Label("Editar", systemImage: "pencil")
                             }
                             .tint(.orange)
                         }
@@ -110,10 +113,30 @@ struct ImovelDetailView: View {
         }
         .navigationTitle(imovel.nome)
         .safeAreaInset(edge: .bottom) {
-            Button {
-                escaneando = true
+            Menu {
+                Section("Novo scan · \(Formato.andar(andarAtual))") {
+                    Button {
+                        scan = ConfigScan(modo: .umComodo, sessao: UUID(), mapa: nil, andar: andarAtual)
+                    } label: {
+                        Label("Um cômodo", systemImage: "square")
+                    }
+                    Button {
+                        scan = ConfigScan(modo: .casaToda, sessao: UUID(), mapa: nil, andar: andarAtual)
+                    } label: {
+                        Label("Casa toda (vários cômodos)", systemImage: "square.grid.2x2")
+                    }
+                }
+                if let continuar {
+                    Section("Continuar de onde parou") {
+                        Button {
+                            iniciarContinuacao(sessao: continuar.sessao)
+                        } label: {
+                            Label("Continuar scan (depois de \(continuar.comodo.nome))", systemImage: "arrow.forward.circle")
+                        }
+                    }
+                }
             } label: {
-                Label("Escanear cômodo · \(Formato.andar(andarAtual))", systemImage: "camera.viewfinder")
+                Label("Escanear · \(Formato.andar(andarAtual))", systemImage: "camera.viewfinder")
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
@@ -126,25 +149,22 @@ struct ImovelDetailView: View {
                 andarAtual = ultimo.andarOuPadrao
             }
         }
-        .fullScreenCover(isPresented: $escaneando) {
-            RoomScanView { nome, room, norte in
-                try store.adicionarComodo(nome: nome, room: room, imovelID: imovelID, andar: andarAtual, norte: norte)
+        .fullScreenCover(item: $scan) { config in
+            RoomScanView(config: config) { room, mapa, norte, andar, sessao in
+                try store.adicionarComodo(
+                    room: room, imovelID: imovelID, andar: andar,
+                    norte: norte, sessao: sessao, mapa: mapa
+                ).nome
             }
         }
-        .alert(
-            "Renomear cômodo",
-            isPresented: Binding(get: { renomeando != nil }, set: { if !$0 { renomeando = nil } }),
-            presenting: renomeando
-        ) { comodo in
-            TextField("Nome do cômodo", text: $novoNome)
-            Button("Salvar") {
-                let nome = novoNome.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !nome.isEmpty {
-                    store.renomearComodo(id: comodo.id, para: nome, imovelID: imovelID)
-                }
-            }
-            Button("Cancelar", role: .cancel) {}
+        .sheet(item: $editando) { comodo in
+            EditarComodoView(imovelID: imovelID, comodo: comodo)
         }
+    }
+
+    private func iniciarContinuacao(sessao: UUID) {
+        let mapa = Storage.carregarMapa(sessao: sessao, imovelID: imovelID)
+        scan = ConfigScan(modo: .casaToda, sessao: mapa == nil ? UUID() : sessao, mapa: mapa, andar: andarAtual)
     }
 
     /// Abre o endereço (com Eircode) no app Mapas.
@@ -157,11 +177,6 @@ struct ImovelDetailView: View {
         c?.queryItems = [URLQueryItem(name: "q", value: consulta)]
         return c?.url
     }
-
-    private func iniciarRenomear(_ comodo: Comodo) {
-        novoNome = comodo.nome
-        renomeando = comodo
-    }
 }
 
 private struct ComodoRow: View {
@@ -169,9 +184,10 @@ private struct ComodoRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: "square.dashed")
-                .font(.title2)
+            Image(systemName: (comodo.tipo ?? .outro).icone)
+                .font(.title3)
                 .foregroundStyle(.tint)
+                .frame(width: 30)
             VStack(alignment: .leading, spacing: 2) {
                 Text(comodo.nome)
                     .font(.headline)

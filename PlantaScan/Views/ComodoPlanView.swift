@@ -64,10 +64,9 @@ struct ComodoPlanView: View {
                         Toggle("Nomes dos objetos", isOn: $mostrarNomesObjetos)
                     }
                     Button {
-                        novoNome = comodo.nome
                         renomeandoComodo = true
                     } label: {
-                        Label("Renomear cômodo", systemImage: "pencil")
+                        Label("Editar nome e tipo", systemImage: "pencil")
                     }
                     Button {
                         ajustandoNorte = true
@@ -92,15 +91,8 @@ struct ComodoPlanView: View {
             }
             .presentationDetents([.medium])
         }
-        .alert("Renomear cômodo", isPresented: $renomeandoComodo) {
-            TextField("Nome do cômodo", text: $novoNome)
-            Button("Salvar") {
-                let nome = novoNome.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !nome.isEmpty {
-                    store.renomearComodo(id: comodoID, para: nome, imovelID: imovelID)
-                }
-            }
-            Button("Cancelar", role: .cancel) {}
+        .sheet(isPresented: $renomeandoComodo) {
+            EditarComodoView(imovelID: imovelID, comodo: comodo)
         }
         .alert(
             "Renomear objeto",

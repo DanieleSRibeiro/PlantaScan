@@ -1,3 +1,4 @@
+import ARKit
 import Foundation
 import RoomPlan
 
@@ -91,5 +92,26 @@ enum Storage {
     static func apagarScan(comodoID: UUID, imovelID: UUID) {
         try? fm.removeItem(at: urlScan(comodoID: comodoID, imovelID: imovelID))
         try? fm.removeItem(at: urlModelo(comodoID: comodoID, imovelID: imovelID))
+    }
+
+    // MARK: Mapa do ambiente (para continuar o scan depois)
+
+    static func urlMapa(sessao: UUID, imovelID: UUID) -> URL {
+        pasta(imovelID: imovelID).appendingPathComponent("sessao-\(sessao.uuidString).worldmap")
+    }
+
+    static func salvarMapa(_ mapa: ARWorldMap, sessao: UUID, imovelID: UUID) throws {
+        try fm.createDirectory(at: pasta(imovelID: imovelID), withIntermediateDirectories: true)
+        let data = try NSKeyedArchiver.archivedData(withRootObject: mapa, requiringSecureCoding: true)
+        try data.write(to: urlMapa(sessao: sessao, imovelID: imovelID), options: .atomic)
+    }
+
+    static func carregarMapa(sessao: UUID, imovelID: UUID) -> ARWorldMap? {
+        guard let data = try? Data(contentsOf: urlMapa(sessao: sessao, imovelID: imovelID)) else { return nil }
+        return try? NSKeyedUnarchiver.unarchivedObject(ofClass: ARWorldMap.self, from: data)
+    }
+
+    static func existeMapa(sessao: UUID, imovelID: UUID) -> Bool {
+        fm.fileExists(atPath: urlMapa(sessao: sessao, imovelID: imovelID).path)
     }
 }

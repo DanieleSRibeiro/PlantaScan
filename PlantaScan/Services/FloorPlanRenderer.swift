@@ -249,7 +249,6 @@ struct FloorPlanRenderer {
     }
 
     private func desenharCotas(_ ctx: GraphicsContext) {
-        let centroTela = t.tela(plano.centro)
         for p in plano.paredes {
             let a = t.tela(p.a)
             let b = t.tela(p.b)
@@ -257,7 +256,8 @@ struct FloorPlanRenderer {
             let u = (b - a).normalizado
             var n = u.perpendicular
             let meio = CGPoint.media(a, b)
-            if (meio - centroTela).dot(n) < 0 { n = -n }
+            let referencia = t.tela(p.referencia ?? plano.centro)
+            if (meio - referencia).dot(n) < 0 { n = -n }
 
             let off = larguraParede / 2 + 10
             let a2 = a + n * off
@@ -283,10 +283,19 @@ struct FloorPlanRenderer {
     }
 
     private func desenharRotuloArea(_ ctx: GraphicsContext) {
+        if !plano.rotulos.isEmpty {
+            for r in plano.rotulos {
+                desenharRotulo(ctx, nome: mostrarNomeComodo ? r.nome : "", area: r.area, em: t.tela(r.ponto))
+            }
+            return
+        }
         guard plano.area > 0 else { return }
-        let c = t.tela(plano.centroRotulo)
-        let nome = mostrarNomeComodo ? (titulo ?? "") : ""
-        let area = Text(Formato.area(plano.area)).font(.system(size: 12)).foregroundStyle(paleta.cota)
+        desenharRotulo(ctx, nome: mostrarNomeComodo ? (titulo ?? "") : "", area: plano.area, em: t.tela(plano.centroRotulo))
+    }
+
+    private func desenharRotulo(_ ctx: GraphicsContext, nome: String, area valorArea: Double, em c: CGPoint) {
+        let mostrarArea = self.mostrarArea && valorArea > 0
+        let area = Text(Formato.area(valorArea)).font(.system(size: 12)).foregroundStyle(paleta.cota)
         let textoNome = Text(nome).font(.system(size: 14, weight: .semibold)).foregroundStyle(paleta.texto)
         switch (nome.isEmpty, mostrarArea) {
         case (false, true):

@@ -2,21 +2,47 @@ import ARKit
 import SwiftUI
 import RoomPlan
 
-/// Tela de scan: RoomCaptureView (com as instruções do próprio RoomPlan) + botões Concluir/Cancelar.
+enum ModoScan {
+    case umComodo
+    case casaToda
+}
+
+struct ConfigScan: Identifiable {
+    let id = UUID()
+    let modo: ModoScan
+    /// Sessão (sistema de coordenadas) em que os cômodos serão salvos.
+    let sessao: UUID
+    /// Mapa do ambiente para continuar uma sessão anterior.
+    let mapa: ARWorldMap?
+    let andar: Int
+}
+
+/// Tela de scan: um cômodo, vários cômodos seguidos (casa toda) ou continuação de uma sessão anterior.
 struct RoomScanView: View {
-    /// Nome, resultado e direção do norte medida (radianos), se houver.
-    let aoSalvar: (String, CapturedRoom, Double?) throws -> Void
+    let config: ConfigScan
+    /// Salva o cômodo e devolve o nome dado a ele.
+    let aoCapturar: (_ room: CapturedRoom, _ mapa: ARWorldMap?, _ norte: Double?, _ andar: Int, _ sessao: UUID) throws -> String
 
     @Environment(\.dismiss) private var dismiss
     @State private var holder = ScanControllerHolder()
-    @State private var fase: Fase = .escaneando
-    @State private var resultado: CapturedRoom?
-    @State private var pedindoNome = false
-    @State private var nome = ""
+    @State private var fase: Fase
+    @State private var proximoDepois = false
+    @State private var andar: Int
+    @State private var sessao: UUID
+    @State private var salvos: [String] = []
+    @State private var aviso: String?
     @State private var erro: String?
 
     private enum Fase {
-        case escaneando, processando, pronto
+        case relocalizando, escaneando, processando, fim
+    }
+
+    init(config: ConfigScan, aoCapturar: @escaping (CapturedRoom, ARWorldMap?, Double?, Int, UUID) throws -> String) {
+        self.config = config
+        self.aoCapturar = aoCapturar
+        _fase = State(initialValue: config.mapa == nil ? .escaneando : .relocalizando)
+        _andar = State(initialValue: config.andar)
+        _sessao = State(initialValue: config.sessao)
     }
 
     var body: some View {
@@ -29,58 +55,29 @@ struct RoomScanView: View {
 
     private var scanner: some View {
         ZStack {
-            RoomCaptureRepresentable(holder: holder) { resultado in
-                tratar(resultado)
-            }
+            RoomCaptureRepresentable(
+                holder: holder,
+                mapaInicial: config.mapa,
+                aoTerminar: { tratar($0) },
+                aoRelocalizar: { fase = .escaneando }
+            )
             .ignoresSafeArea()
 
-            VStack {
-                HStack {
-                    Button("Cancelar") {
-                        holder.controller?.parar()
-                        dismiss()
-                    }
-                    .buttonStyle(.bordered)
-
-                    Spacer()
-
-                    switch fase {
-                    case .escaneando:
-                        Button("Concluir") {
-                            fase = .processando
-                            holder.controller?.parar()
-                        }
-                        .buttonStyle(.borderedProminent)
-                    case .processando:
-                        ProgressView()
-                            .padding(8)
-                            .background(.regularMaterial, in: Capsule())
-                    case .pronto:
-                        Button("Salvar") {
-                            pedindoNome = true
-                        }
-                        .buttonStyle(.borderedProminent)
-                    }
+            VStack(spacing: 12) {
+                barraSuperior
+                if let aviso {
+                    Text(aviso)
+                        .font(.subheadline.weight(.semibold))
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(.regularMaterial, in: Capsule())
+                        .transition(.move(edge: .top).combined(with: .opacity))
                 }
-                .controlSize(.large)
-                .padding()
-
                 Spacer()
-
-                if fase == .processando {
-                    Text("Processando o scan…")
-                        .padding(12)
-                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
-                        .padding(.bottom, 40)
-                }
+                barraInferior
             }
-        }
-        .alert("Nome do cômodo", isPresented: $pedindoNome) {
-            TextField("Ex.: Sala, Quarto 1", text: $nome)
-            Button("Salvar") { salvar() }
-            Button("Agora não", role: .cancel) {}
-        } message: {
-            Text("Dê um nome para identificar este cômodo.")
+            .padding()
+            .animation(.snappy, value: aviso)
         }
         .alert(
             "Erro",
@@ -89,6 +86,88 @@ struct RoomScanView: View {
             Button("OK") { dismiss() }
         } message: {
             Text(erro ?? "")
+        }
+    }
+
+    private var barraSuperior: some View {
+        HStack {
+            Button(salvos.isEmpty ? "Cancelar" : "Sair") {
+                holder.controller?.encerrar()
+                dismiss()
+            }
+            .buttonStyle(.bordered)
+
+            Spacer()
+
+            Menu {
+                ForEach(1...max(andar + 1, 3), id: \.self) { n in
+                    Button(Formato.andar(n)) { andar = n }
+                }
+            } label: {
+                Label(Formato.andar(andar), systemImage: "stairs")
+            }
+            .buttonStyle(.bordered)
+        }
+        .controlSize(.large)
+    }
+
+    @ViewBuilder
+    private var barraInferior: some View {
+        switch fase {
+        case .relocalizando:
+            VStack(spacing: 10) {
+                ProgressView()
+                Text("Reconhecendo o local…")
+                    .font(.headline)
+                Text("Aponte o iPhone para uma parte que já foi escaneada (por exemplo, a porta por onde você vai entrar) e mova devagar.")
+                    .font(.subheadline)
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(.secondary)
+                Button("Começar como scan separado") {
+                    sessao = UUID()
+                    holder.controller?.iniciarCaptura()
+                    fase = .escaneando
+                }
+                .font(.footnote)
+            }
+            .padding()
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+        case .escaneando:
+            VStack(spacing: 8) {
+                if !salvos.isEmpty {
+                    Text("Salvos: \(salvos.joined(separator: ", "))")
+                        .font(.caption)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(.regularMaterial, in: Capsule())
+                }
+                HStack {
+                    if config.modo == .casaToda {
+                        Button {
+                            finalizarComodo(continuar: true)
+                        } label: {
+                            Label("Próximo cômodo", systemImage: "arrow.right.circle")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+                    }
+                    Button {
+                        finalizarComodo(continuar: false)
+                    } label: {
+                        Label("Concluir", systemImage: "checkmark.circle")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+                .controlSize(.large)
+            }
+        case .processando:
+            Label("Processando o cômodo…", systemImage: "hourglass")
+                .padding(12)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+        case .fim:
+            EmptyView()
         }
     }
 
@@ -107,25 +186,44 @@ struct RoomScanView: View {
         }
     }
 
-    private func tratar(_ r: Result<CapturedRoom, Error>) {
+    private func finalizarComodo(continuar: Bool) {
+        proximoDepois = continuar
+        fase = .processando
+        holder.controller?.finalizarComodo()
+    }
+
+    private func tratar(_ r: Result<(CapturedRoom, ARWorldMap?), Error>) {
         switch r {
-        case .success(let room):
-            resultado = room
-            fase = .pronto
-            pedindoNome = true
+        case .success(let (room, mapa)):
+            if room.walls.isEmpty {
+                mostrarAviso("Nenhuma parede detectada — cômodo descartado")
+            } else {
+                do {
+                    let nome = try aoCapturar(room, mapa, holder.controller?.norteMedido, andar, sessao)
+                    salvos.append(nome)
+                    mostrarAviso("✓ \(nome) salvo")
+                } catch {
+                    erro = "Não foi possível salvar o cômodo: \(error.localizedDescription)"
+                    return
+                }
+            }
+            if proximoDepois {
+                holder.controller?.iniciarCaptura()
+                fase = .escaneando
+            } else {
+                fase = .fim
+                holder.controller?.encerrar()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { dismiss() }
+            }
         case .failure(let e):
             erro = "Falha ao processar o scan: \(e.localizedDescription)"
         }
     }
 
-    private func salvar() {
-        guard let room = resultado else { return }
-        let limpo = nome.trimmingCharacters(in: .whitespacesAndNewlines)
-        do {
-            try aoSalvar(limpo.isEmpty ? "Cômodo" : limpo, room, holder.controller?.norteMedido)
-            dismiss()
-        } catch {
-            erro = "Não foi possível salvar o cômodo: \(error.localizedDescription)"
+    private func mostrarAviso(_ texto: String) {
+        aviso = texto
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+            if aviso == texto { aviso = nil }
         }
     }
 }
@@ -138,33 +236,46 @@ final class ScanControllerHolder {
 
 struct RoomCaptureRepresentable: UIViewControllerRepresentable {
     let holder: ScanControllerHolder
-    let aoTerminar: (Result<CapturedRoom, Error>) -> Void
+    let mapaInicial: ARWorldMap?
+    let aoTerminar: (Result<(CapturedRoom, ARWorldMap?), Error>) -> Void
+    let aoRelocalizar: () -> Void
 
     func makeUIViewController(context: Context) -> ScanController {
-        let controller = ScanController()
+        let controller = ScanController(mapaInicial: mapaInicial)
         controller.aoTerminar = aoTerminar
+        controller.aoRelocalizar = aoRelocalizar
         holder.controller = controller
         return controller
     }
 
     func updateUIViewController(_ uiViewController: ScanController, context: Context) {
         uiViewController.aoTerminar = aoTerminar
+        uiViewController.aoRelocalizar = aoRelocalizar
     }
 }
 
+/// Controla a RoomCaptureView com uma ARSession própria, para poder:
+/// - escanear vários cômodos seguidos no mesmo referencial (stop(pauseARSession: false));
+/// - salvar o mapa do ambiente (ARWorldMap) e relocalizar nele para continuar depois.
 /// O delegate do RoomCaptureView precisa ser NSCoding; um UIViewController já é.
 final class ScanController: UIViewController, RoomCaptureViewDelegate {
-    var aoTerminar: ((Result<CapturedRoom, Error>) -> Void)?
+    var aoTerminar: ((Result<(CapturedRoom, ARWorldMap?), Error>) -> Void)?
+    var aoRelocalizar: (() -> Void)?
 
+    private let mapaInicial: ARWorldMap?
+    private let sessaoAR = ARSession()
     private var captureView: RoomCaptureView?
-    private var rodando = false
+    private var capturando = false
+    private var aguardandoRelocalizacao = false
+    private var iniciou = false
     private let bussola = BussolaService()
-    private var timerBussola: Timer?
+    private var timer: Timer?
 
     /// Direção do norte verdadeiro no plano do scan (radianos), se foi possível medir.
     var norteMedido: Double? { bussola.resultado }
 
-    init() {
+    init(mapaInicial: ARWorldMap?) {
+        self.mapaInicial = mapaInicial
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -174,7 +285,7 @@ final class ScanController: UIViewController, RoomCaptureViewDelegate {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        let cv = RoomCaptureView(frame: view.bounds)
+        let cv = RoomCaptureView(frame: view.bounds, arSession: sessaoAR)
         cv.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         cv.delegate = self
         view.addSubview(cv)
@@ -183,33 +294,64 @@ final class ScanController: UIViewController, RoomCaptureViewDelegate {
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
-        iniciar()
+        guard !iniciou else { return }
+        iniciou = true
+
+        bussola.iniciar()
+        timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            self?.tick()
+        }
+
+        if let mapa = mapaInicial {
+            let configuracao = ARWorldTrackingConfiguration()
+            configuracao.initialWorldMap = mapa
+            sessaoAR.run(configuracao, options: [.resetTracking, .removeExistingAnchors])
+            aguardandoRelocalizacao = true
+        } else {
+            iniciarCaptura()
+        }
     }
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
-        parar()
+        encerrar()
     }
 
-    func iniciar() {
-        guard !rodando, let cv = captureView else { return }
-        cv.captureSession.run(configuration: RoomCaptureSession.Configuration())
-        rodando = true
-
-        bussola.iniciar()
-        timerBussola = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
-            guard let self, let frame = self.captureView?.captureSession.arSession.currentFrame else { return }
-            self.bussola.registrarAmostra(camera: frame.camera.transform)
+    private func tick() {
+        guard let frame = sessaoAR.currentFrame else { return }
+        if aguardandoRelocalizacao, case .normal = frame.camera.trackingState {
+            aguardandoRelocalizacao = false
+            iniciarCaptura()
+            aoRelocalizar?()
+        }
+        if capturando {
+            bussola.registrarAmostra(camera: frame.camera.transform)
         }
     }
 
-    func parar() {
-        guard rodando else { return }
-        timerBussola?.invalidate()
-        timerBussola = nil
+    func iniciarCaptura() {
+        aguardandoRelocalizacao = false
+        guard !capturando, let cv = captureView else { return }
+        cv.captureSession.run(configuration: RoomCaptureSession.Configuration())
+        capturando = true
+    }
+
+    /// Termina o cômodo atual mantendo a ARSession ativa (para o próximo cômodo ficar alinhado).
+    func finalizarComodo() {
+        guard capturando else { return }
+        capturando = false
+        captureView?.captureSession.stop(pauseARSession: false)
+    }
+
+    func encerrar() {
+        timer?.invalidate()
+        timer = nil
         bussola.parar()
-        captureView?.captureSession.stop()
-        rodando = false
+        if capturando {
+            captureView?.captureSession.stop()
+            capturando = false
+        }
+        sessaoAR.pause()
     }
 
     // MARK: RoomCaptureViewDelegate
@@ -221,8 +363,13 @@ final class ScanController: UIViewController, RoomCaptureViewDelegate {
     func captureView(didPresent processedResult: CapturedRoom, error: Error?) {
         if let error {
             aoTerminar?(.failure(error))
-        } else {
-            aoTerminar?(.success(processedResult))
+            return
+        }
+        // Guarda o mapa do ambiente para poder continuar esta sessão depois.
+        sessaoAR.getCurrentWorldMap { [weak self] mapa, _ in
+            DispatchQueue.main.async {
+                self?.aoTerminar?(.success((processedResult, mapa)))
+            }
         }
     }
 }

@@ -1,3 +1,4 @@
+import ARKit
 import Foundation
 import Observation
 import RoomPlan
@@ -80,15 +81,47 @@ final class ImovelStore {
 
     // MARK: Cômodos
 
-    func adicionarComodo(nome: String, room: CapturedRoom, imovelID: UUID, andar: Int, norte: Double?) throws {
-        guard var imovel = imovel(id: imovelID) else { return }
-        var comodo = Comodo(nome: nome)
-        comodo.area = FloorPlanBuilder.construir(room).area
+    /// Salva um cômodo escaneado, identificando o tipo e dando um nome automático ("Quarto 1").
+    @discardableResult
+    func adicionarComodo(room: CapturedRoom, imovelID: UUID, andar: Int, norte: Double?, sessao: UUID, mapa: ARWorldMap?) throws -> Comodo {
+        guard var imovel = imovel(id: imovelID) else {
+            throw CocoaError(.fileNoSuchFile)
+        }
+        let plano = FloorPlanBuilder.construir(room)
+        let tipo = DetectorComodo.tipo(room, centro: plano.centroRotulo)
+        var comodo = Comodo(nome: DetectorComodo.nomeSugerido(tipo, existentes: imovel.comodos))
+        comodo.tipo = tipo
+        comodo.area = plano.area
         comodo.andar = andar
-        comodo.norte = norte
+        comodo.sessao = sessao
+        // Cômodos da mesma sessão compartilham o referencial, então o norte também vale para eles.
+        comodo.norte = norte ?? imovel.comodos.first { $0.sessao == sessao && $0.norte != nil }?.norte
         try Storage.salvarScan(room, comodoID: comodo.id, imovelID: imovelID)
+        if let mapa {
+            try? Storage.salvarMapa(mapa, sessao: sessao, imovelID: imovelID)
+        }
         imovel.comodos.append(comodo)
         atualizar(imovel)
+        return comodo
+    }
+
+    func atualizarComodo(id: UUID, nome: String, tipo: TipoComodo, andar: Int, imovelID: UUID) {
+        alterarComodo(id, imovelID: imovelID) { c in
+            c.nome = nome
+            c.tipo = tipo
+            c.andar = andar
+        }
+    }
+
+    /// Última sessão de scan que pode ser continuada (tem mapa do ambiente salvo).
+    func sessaoParaContinuar(imovelID: UUID) -> (sessao: UUID, comodo: Comodo)? {
+        guard let imovel = imovel(id: imovelID) else { return nil }
+        for c in imovel.comodos.reversed() {
+            if let s = c.sessao, Storage.existeMapa(sessao: s, imovelID: imovelID) {
+                return (s, c)
+            }
+        }
+        return nil
     }
 
     func renomearComodo(id: UUID, para nome: String, imovelID: UUID) {

@@ -26,6 +26,9 @@ struct Comodo: Identifiable, Codable, Hashable {
     var area: Double?
     /// Andar (1 = 1º andar).
     var andar: Int?
+    var tipo: TipoComodo?
+    /// Cômodos da mesma sessão de scan compartilham o sistema de coordenadas (planta alinhada).
+    var sessao: UUID?
     /// Ajustes feitos pelo usuário em portas/janelas/vãos, por id do elemento.
     var edicoes: [String: EdicaoAbertura]?
     /// Portas/janelas/vãos adicionados manualmente.
