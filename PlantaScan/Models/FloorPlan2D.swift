@@ -74,7 +74,7 @@ struct Abertura2D: Identifiable {
 
 struct Objeto2D: Identifiable {
     let id: UUID
-    let nome: String
+    var nome: String
     let cantos: [CGPoint]
     let centro: CGPoint
     let dimensoes: Dimensoes

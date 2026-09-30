@@ -1,9 +1,11 @@
+import ARKit
 import SwiftUI
 import RoomPlan
 
 /// Tela de scan: RoomCaptureView (com as instruções do próprio RoomPlan) + botões Concluir/Cancelar.
 struct RoomScanView: View {
-    let aoSalvar: (String, CapturedRoom) throws -> Void
+    /// Nome, resultado e direção do norte medida (radianos), se houver.
+    let aoSalvar: (String, CapturedRoom, Double?) throws -> Void
 
     @Environment(\.dismiss) private var dismiss
     @State private var holder = ScanControllerHolder()
@@ -120,7 +122,7 @@ struct RoomScanView: View {
         guard let room = resultado else { return }
         let limpo = nome.trimmingCharacters(in: .whitespacesAndNewlines)
         do {
-            try aoSalvar(limpo.isEmpty ? "Cômodo" : limpo, room)
+            try aoSalvar(limpo.isEmpty ? "Cômodo" : limpo, room, holder.controller?.norteMedido)
             dismiss()
         } catch {
             erro = "Não foi possível salvar o cômodo: \(error.localizedDescription)"
@@ -156,6 +158,11 @@ final class ScanController: UIViewController, RoomCaptureViewDelegate {
 
     private var captureView: RoomCaptureView?
     private var rodando = false
+    private let bussola = BussolaService()
+    private var timerBussola: Timer?
+
+    /// Direção do norte verdadeiro no plano do scan (radianos), se foi possível medir.
+    var norteMedido: Double? { bussola.resultado }
 
     init() {
         super.init(nibName: nil, bundle: nil)
@@ -188,10 +195,19 @@ final class ScanController: UIViewController, RoomCaptureViewDelegate {
         guard !rodando, let cv = captureView else { return }
         cv.captureSession.run(configuration: RoomCaptureSession.Configuration())
         rodando = true
+
+        bussola.iniciar()
+        timerBussola = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            guard let self, let frame = self.captureView?.captureSession.arSession.currentFrame else { return }
+            self.bussola.registrarAmostra(camera: frame.camera.transform)
+        }
     }
 
     func parar() {
         guard rodando else { return }
+        timerBussola?.invalidate()
+        timerBussola = nil
+        bussola.parar()
         captureView?.captureSession.stop()
         rodando = false
     }

@@ -14,6 +14,8 @@ enum Formato {
 
     static func metros(_ v: Double) -> String { "\(numero(v)) m" }
 
+    static func andar(_ n: Int) -> String { "\(n)º andar" }
+
     static func area(_ v: Double) -> String { "\(numero(v)) m²" }
 
     /// "L 0,80 × A 2,10 × P 0,05 m" (profundidade omitida quando não medida).

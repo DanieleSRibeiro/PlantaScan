@@ -12,7 +12,12 @@ final class ImovelStore {
     }
 
     func recarregar() {
-        imoveis = Storage.carregarImoveis().sorted { $0.dataCriacao > $1.dataCriacao }
+        imoveis = Storage.carregarImoveis()
+        ordenar()
+    }
+
+    private func ordenar() {
+        imoveis.sort { $0.nome.localizedStandardCompare($1.nome) == .orderedAscending }
     }
 
     func imovel(id: UUID) -> Imovel? {
@@ -22,16 +27,45 @@ final class ImovelStore {
     // MARK: Imóveis
 
     @discardableResult
-    func criarImovel(nome: String, endereco: String) -> Imovel {
-        let novo = Imovel(nome: nome, endereco: endereco)
-        imoveis.insert(novo, at: 0)
+    func criarImovel(nome: String, endereco: String, eircode: String = "") -> Imovel {
+        var novo = Imovel(nome: nome, endereco: endereco)
+        novo.eircode = eircode.isEmpty ? nil : ImportadorPlanilha.formatarEircode(eircode)
+        imoveis.append(novo)
+        ordenar()
         persistir(novo)
         return novo
     }
 
+    /// Importa imóveis de uma planilha, ignorando repetidos (mesmo nome e Eircode).
+    func importar(_ itens: [ImovelImportado]) -> (importados: Int, ignorados: Int) {
+        func chave(_ nome: String, _ eircode: String) -> String {
+            (nome + "|" + eircode.filter { !$0.isWhitespace }).lowercased()
+        }
+        var existentes = Set(imoveis.map { chave($0.nome, $0.eircode ?? "") })
+        var importados = 0
+        var ignorados = 0
+        for item in itens {
+            let k = chave(item.nome, item.eircode)
+            guard !existentes.contains(k) else {
+                ignorados += 1
+                continue
+            }
+            existentes.insert(k)
+            var novo = Imovel(nome: item.nome, endereco: item.endereco)
+            novo.eircode = item.eircode.isEmpty ? nil : item.eircode
+            imoveis.append(novo)
+            persistir(novo)
+            importados += 1
+        }
+        ordenar()
+        return (importados, ignorados)
+    }
+
     func atualizar(_ imovel: Imovel) {
         guard let i = imoveis.firstIndex(where: { $0.id == imovel.id }) else { return }
+        let renomeado = imoveis[i].nome != imovel.nome
         imoveis[i] = imovel
+        if renomeado { ordenar() }
         persistir(imovel)
     }
 
@@ -46,10 +80,12 @@ final class ImovelStore {
 
     // MARK: Cômodos
 
-    func adicionarComodo(nome: String, room: CapturedRoom, imovelID: UUID) throws {
+    func adicionarComodo(nome: String, room: CapturedRoom, imovelID: UUID, andar: Int, norte: Double?) throws {
         guard var imovel = imovel(id: imovelID) else { return }
         var comodo = Comodo(nome: nome)
         comodo.area = FloorPlanBuilder.construir(room).area
+        comodo.andar = andar
+        comodo.norte = norte
         try Storage.salvarScan(room, comodoID: comodo.id, imovelID: imovelID)
         imovel.comodos.append(comodo)
         atualizar(imovel)
@@ -62,13 +98,30 @@ final class ImovelStore {
         atualizar(imovel)
     }
 
-    func apagarComodos(at offsets: IndexSet, imovelID: UUID) {
+    func apagarComodos(ids: [UUID], imovelID: UUID) {
         guard var imovel = imovel(id: imovelID) else { return }
-        for i in offsets.sorted(by: >) {
-            Storage.apagarScan(comodoID: imovel.comodos[i].id, imovelID: imovelID)
-            imovel.comodos.remove(at: i)
+        for id in ids {
+            Storage.apagarScan(comodoID: id, imovelID: imovelID)
         }
+        imovel.comodos.removeAll { ids.contains($0.id) }
         atualizar(imovel)
+    }
+
+    func moverComodo(id: UUID, paraAndar andar: Int, imovelID: UUID) {
+        alterarComodo(id, imovelID: imovelID) { $0.andar = andar }
+    }
+
+    func renomearObjeto(id: UUID, para nome: String, comodoID: UUID, imovelID: UUID) {
+        alterarComodo(comodoID, imovelID: imovelID) { c in
+            var nomes = c.nomesObjetos ?? [:]
+            nomes[id.uuidString] = nome.isEmpty ? nil : nome
+            c.nomesObjetos = nomes
+        }
+    }
+
+    /// Ajuste manual do norte, em graus.
+    func ajustarNorte(_ graus: Double, comodoID: UUID, imovelID: UUID) {
+        alterarComodo(comodoID, imovelID: imovelID) { $0.ajusteNorte = graus == 0 ? nil : graus }
     }
 
     // MARK: Edições da planta

@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 enum ImovelEditorAlvo: Identifiable {
     case novo
@@ -16,35 +17,86 @@ struct ImoveisListView: View {
     @Environment(ImovelStore.self) private var store
     @State private var editor: ImovelEditorAlvo?
     @State private var paraApagar: Imovel?
+    @State private var busca = ""
+    @State private var importando = false
+    @State private var resultadoImportacao: String?
+
+    private static let tiposPlanilha: [UTType] =
+        [UTType.commaSeparatedText, UTType.tabSeparatedText, UTType.plainText]
+        + [UTType("org.openxmlformats.spreadsheetml.sheet")].compactMap { $0 }
+
+    private var filtrados: [Imovel] {
+        let termo = busca.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !termo.isEmpty else { return store.imoveis }
+        let palavras = normalizar(termo).split(separator: " ").map(String.init)
+        return store.imoveis.filter { imovel in
+            let texto = normalizar([imovel.nome, imovel.endereco, imovel.eircode ?? ""].joined(separator: " "))
+            let eircodeCompacto = normalizar(imovel.eircode ?? "").replacingOccurrences(of: " ", with: "")
+            let termoCompacto = normalizar(termo).replacingOccurrences(of: " ", with: "")
+            if !eircodeCompacto.isEmpty && eircodeCompacto.contains(termoCompacto) { return true }
+            return palavras.allSatisfy { texto.contains($0) }
+        }
+    }
+
+    private func normalizar(_ s: String) -> String {
+        s.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "pt_BR"))
+    }
 
     var body: some View {
         NavigationStack {
             Group {
                 if store.imoveis.isEmpty {
-                    ContentUnavailableView(
-                        "Nenhum imóvel",
-                        systemImage: "house",
-                        description: Text("Toque em + para cadastrar o primeiro imóvel.")
-                    )
+                    ContentUnavailableView {
+                        Label("Nenhum imóvel", systemImage: "house")
+                    } description: {
+                        Text("Cadastre um imóvel ou importe uma planilha (CSV ou Excel) com várias casas.")
+                    } actions: {
+                        Button("Novo imóvel") { editor = .novo }
+                            .buttonStyle(.borderedProminent)
+                        Button("Importar planilha") { importando = true }
+                    }
+                } else if filtrados.isEmpty {
+                    ContentUnavailableView.search(text: busca)
                 } else {
                     lista
                 }
             }
             .navigationTitle("Imóveis")
+            .searchable(text: $busca, prompt: "Nome, endereço ou Eircode")
             .navigationDestination(for: UUID.self) { id in
                 ImovelDetailView(imovelID: id)
             }
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
-                    Button {
-                        editor = .novo
+                    Menu {
+                        Button {
+                            editor = .novo
+                        } label: {
+                            Label("Novo imóvel", systemImage: "plus")
+                        }
+                        Button {
+                            importando = true
+                        } label: {
+                            Label("Importar planilha (CSV/Excel)", systemImage: "square.and.arrow.down")
+                        }
                     } label: {
-                        Label("Novo imóvel", systemImage: "plus")
+                        Label("Adicionar", systemImage: "plus")
                     }
                 }
             }
             .sheet(item: $editor) { alvo in
                 ImovelFormView(alvo: alvo)
+            }
+            .fileImporter(isPresented: $importando, allowedContentTypes: Self.tiposPlanilha) { resultado in
+                importar(resultado)
+            }
+            .alert(
+                "Importação",
+                isPresented: Binding(get: { resultadoImportacao != nil }, set: { if !$0 { resultadoImportacao = nil } })
+            ) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(resultadoImportacao ?? "")
             }
             .confirmationDialog(
                 "Apagar imóvel?",
@@ -71,7 +123,7 @@ struct ImoveisListView: View {
 
     private var lista: some View {
         List {
-            ForEach(store.imoveis) { imovel in
+            ForEach(filtrados) { imovel in
                 NavigationLink(value: imovel.id) {
                     ImovelRow(imovel: imovel)
                 }
@@ -84,7 +136,7 @@ struct ImoveisListView: View {
                     Button {
                         editor = .editar(imovel)
                     } label: {
-                        Label("Renomear", systemImage: "pencil")
+                        Label("Editar", systemImage: "pencil")
                     }
                     .tint(.orange)
                 }
@@ -92,7 +144,7 @@ struct ImoveisListView: View {
                     Button {
                         editor = .editar(imovel)
                     } label: {
-                        Label("Renomear", systemImage: "pencil")
+                        Label("Editar", systemImage: "pencil")
                     }
                     Button(role: .destructive) {
                         paraApagar = imovel
@@ -103,6 +155,21 @@ struct ImoveisListView: View {
             }
         }
     }
+
+    private func importar(_ resultado: Result<URL, Error>) {
+        do {
+            let url = try resultado.get()
+            let itens = try ImportadorPlanilha.ler(url: url)
+            let r = store.importar(itens)
+            var msg = "\(r.importados) imóvel(is) importado(s)."
+            if r.ignorados > 0 {
+                msg += " \(r.ignorados) ignorado(s) por já existirem."
+            }
+            resultadoImportacao = msg
+        } catch {
+            resultadoImportacao = error.localizedDescription
+        }
+    }
 }
 
 private struct ImovelRow: View {
@@ -110,8 +177,18 @@ private struct ImovelRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(imovel.nome)
-                .font(.headline)
+            HStack(alignment: .firstTextBaseline) {
+                Text(imovel.nome)
+                    .font(.headline)
+                Spacer()
+                if let eircode = imovel.eircode, !eircode.isEmpty {
+                    Text(eircode)
+                        .font(.caption.monospaced().weight(.semibold))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.accentColor.opacity(0.12), in: Capsule())
+                }
+            }
             if !imovel.endereco.isEmpty {
                 Text(imovel.endereco)
                     .font(.subheadline)
@@ -119,8 +196,10 @@ private struct ImovelRow: View {
                     .lineLimit(2)
             }
             HStack(spacing: 12) {
-                Label(imovel.dataCriacao.formatted(date: .abbreviated, time: .omitted), systemImage: "calendar")
                 Label("\(imovel.comodos.count) cômodo(s)", systemImage: "square.split.2x2")
+                if imovel.areaTotal > 0 {
+                    Label(Formato.area(imovel.areaTotal), systemImage: "ruler")
+                }
             }
             .font(.caption)
             .foregroundStyle(.secondary)
@@ -136,6 +215,7 @@ struct ImovelFormView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var nome = ""
     @State private var endereco = ""
+    @State private var eircode = ""
 
     private var nomeLimpo: String { nome.trimmingCharacters(in: .whitespacesAndNewlines) }
 
@@ -143,11 +223,14 @@ struct ImovelFormView: View {
         NavigationStack {
             Form {
                 Section("Nome") {
-                    TextField("Ex.: Apartamento Centro", text: $nome)
+                    TextField("Ex.: Casa Rua das Flores", text: $nome)
                 }
                 Section("Endereço") {
                     TextField("Rua, número, bairro, cidade", text: $endereco, axis: .vertical)
                         .lineLimit(1...4)
+                    TextField("Eircode (ex.: D02 X285)", text: $eircode)
+                        .textInputAutocapitalization(.characters)
+                        .autocorrectionDisabled()
                 }
             }
             .navigationTitle(tituloTela)
@@ -165,6 +248,7 @@ struct ImovelFormView: View {
                 if case .editar(let imovel) = alvo {
                     nome = imovel.nome
                     endereco = imovel.endereco
+                    eircode = imovel.eircode ?? ""
                 }
             }
         }
@@ -179,13 +263,15 @@ struct ImovelFormView: View {
 
     private func salvar() {
         let enderecoLimpo = endereco.trimmingCharacters(in: .whitespacesAndNewlines)
+        let eircodeLimpo = eircode.trimmingCharacters(in: .whitespacesAndNewlines)
         switch alvo {
         case .novo:
-            store.criarImovel(nome: nomeLimpo, endereco: enderecoLimpo)
+            store.criarImovel(nome: nomeLimpo, endereco: enderecoLimpo, eircode: eircodeLimpo)
         case .editar(let original):
             guard var atual = store.imovel(id: original.id) else { break }
             atual.nome = nomeLimpo
             atual.endereco = enderecoLimpo
+            atual.eircode = eircodeLimpo.isEmpty ? nil : ImportadorPlanilha.formatarEircode(eircodeLimpo)
             store.atualizar(atual)
         }
         dismiss()

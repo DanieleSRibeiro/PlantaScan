@@ -8,6 +8,7 @@ struct ImovelDetailView: View {
     @State private var escaneando = false
     @State private var renomeando: Comodo?
     @State private var novoNome = ""
+    @State private var andarAtual = 1
 
     var body: some View {
         if let imovel = store.imovel(id: imovelID) {
@@ -18,36 +19,70 @@ struct ImovelDetailView: View {
     }
 
     private func conteudo(_ imovel: Imovel) -> some View {
-        List {
+        let andares = imovel.andares
+        let limiteAndar = max((andares.max() ?? 1) + 1, andarAtual, 2)
+
+        return List {
             Section {
-                if !imovel.endereco.isEmpty {
-                    if let url = urlMapa(imovel.endereco) {
+                if !imovel.endereco.isEmpty || imovel.eircode != nil {
+                    let textoEndereco = [imovel.endereco, imovel.eircode ?? ""]
+                        .filter { !$0.isEmpty }
+                        .joined(separator: " · ")
+                    if let url = urlMapa(imovel) {
                         Link(destination: url) {
-                            Label(imovel.endereco, systemImage: "mappin.and.ellipse")
+                            Label(textoEndereco, systemImage: "mappin.and.ellipse")
                         }
                     } else {
-                        Label(imovel.endereco, systemImage: "mappin.and.ellipse")
+                        Label(textoEndereco, systemImage: "mappin.and.ellipse")
                     }
                 }
-                Label(imovel.dataCriacao.formatted(date: .long, time: .omitted), systemImage: "calendar")
+                if !imovel.comodos.isEmpty {
+                    LabeledContent("Área total", value: Formato.area(imovel.areaTotal))
+                    LabeledContent("Cômodos", value: "\(imovel.comodos.count)")
+                }
             }
 
-            Section("Cômodos") {
-                if imovel.comodos.isEmpty {
+            Section {
+                Picker("Andar do próximo scan", selection: $andarAtual) {
+                    ForEach(1...limiteAndar, id: \.self) { n in
+                        Text(Formato.andar(n)).tag(n)
+                    }
+                }
+            } footer: {
+                Text("Escolha o andar em que você está antes de escanear.")
+            }
+
+            if imovel.comodos.isEmpty {
+                Section("Cômodos") {
                     Text("Nenhum cômodo escaneado ainda. Toque em \"Escanear cômodo\".")
                         .foregroundStyle(.secondary)
                 }
-                ForEach(imovel.comodos) { comodo in
-                    NavigationLink {
-                        ComodoPlanView(imovelID: imovelID, comodoID: comodo.id)
-                    } label: {
-                        ComodoRow(comodo: comodo)
-                    }
+            }
+
+            ForEach(andares, id: \.self) { andar in
+                let comodos = imovel.comodos.filter { $0.andarOuPadrao == andar }
+                let area = comodos.reduce(0) { $0 + ($1.area ?? 0) }
+                Section {
+                    ForEach(comodos) { comodo in
+                        NavigationLink {
+                            ComodoPlanView(imovelID: imovelID, comodoID: comodo.id)
+                        } label: {
+                            ComodoRow(comodo: comodo)
+                        }
                         .contextMenu {
                             Button {
                                 iniciarRenomear(comodo)
                             } label: {
                                 Label("Renomear", systemImage: "pencil")
+                            }
+                            Menu {
+                                ForEach(1...limiteAndar, id: \.self) { n in
+                                    Button(Formato.andar(n)) {
+                                        store.moverComodo(id: comodo.id, paraAndar: n, imovelID: imovelID)
+                                    }
+                                }
+                            } label: {
+                                Label("Mover para andar", systemImage: "arrow.up.arrow.down")
                             }
                         }
                         .swipeActions(edge: .leading) {
@@ -58,9 +93,18 @@ struct ImovelDetailView: View {
                             }
                             .tint(.orange)
                         }
-                }
-                .onDelete { offsets in
-                    store.apagarComodos(at: offsets, imovelID: imovelID)
+                    }
+                    .onDelete { offsets in
+                        store.apagarComodos(ids: offsets.map { comodos[$0].id }, imovelID: imovelID)
+                    }
+                } header: {
+                    HStack {
+                        Text(Formato.andar(andar))
+                        Spacer()
+                        if area > 0 {
+                            Text(Formato.area(area))
+                        }
+                    }
                 }
             }
         }
@@ -69,7 +113,7 @@ struct ImovelDetailView: View {
             Button {
                 escaneando = true
             } label: {
-                Label("Escanear cômodo", systemImage: "camera.viewfinder")
+                Label("Escanear cômodo · \(Formato.andar(andarAtual))", systemImage: "camera.viewfinder")
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
@@ -77,9 +121,14 @@ struct ImovelDetailView: View {
             .padding()
             .background(.bar)
         }
+        .onAppear {
+            if let ultimo = imovel.comodos.last {
+                andarAtual = ultimo.andarOuPadrao
+            }
+        }
         .fullScreenCover(isPresented: $escaneando) {
-            RoomScanView { nome, room in
-                try store.adicionarComodo(nome: nome, room: room, imovelID: imovelID)
+            RoomScanView { nome, room, norte in
+                try store.adicionarComodo(nome: nome, room: room, imovelID: imovelID, andar: andarAtual, norte: norte)
             }
         }
         .alert(
@@ -98,10 +147,14 @@ struct ImovelDetailView: View {
         }
     }
 
-    /// Abre o endereço no app Mapas.
-    private func urlMapa(_ endereco: String) -> URL? {
+    /// Abre o endereço (com Eircode) no app Mapas.
+    private func urlMapa(_ imovel: Imovel) -> URL? {
+        let consulta = [imovel.endereco, imovel.eircode ?? ""]
+            .filter { !$0.isEmpty }
+            .joined(separator: ", ")
+        guard !consulta.isEmpty else { return nil }
         var c = URLComponents(string: "https://maps.apple.com/")
-        c?.queryItems = [URLQueryItem(name: "q", value: endereco)]
+        c?.queryItems = [URLQueryItem(name: "q", value: consulta)]
         return c?.url
     }
 

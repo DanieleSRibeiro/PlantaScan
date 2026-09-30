@@ -5,6 +5,9 @@ struct FloorPlanCanvas: View {
     let plano: FloorPlan2D
     var titulo: String?
     @Binding var selecionado: ElementoPlano?
+    var mostrarNomeComodo = true
+    var mostrarNomesObjetos = true
+    var anguloNorte: Double?
 
     @State private var zoom: CGFloat = 1
     @State private var zoomBase: CGFloat = 1
@@ -15,8 +18,12 @@ struct FloorPlanCanvas: View {
         GeometryReader { geo in
             let t = PlanoTransform.ajustar(plano.limites, em: geo.size, zoom: zoom, deslocamento: desloc)
             Canvas { ctx, size in
-                FloorPlanRenderer(plano: plano, t: t, selecionado: selecionado?.id, titulo: titulo)
-                    .desenhar(ctx, tamanho: size)
+                FloorPlanRenderer(
+                    plano: plano, t: t, selecionado: selecionado?.id, titulo: titulo,
+                    mostrarNomeComodo: mostrarNomeComodo, mostrarNomesObjetos: mostrarNomesObjetos,
+                    anguloNorte: anguloNorte
+                )
+                .desenhar(ctx, tamanho: size)
             }
             .background(Color(uiColor: .systemBackground))
             .contentShape(Rectangle())
@@ -88,7 +95,8 @@ struct ModeloPreview: View {
             var paleta = PaletaPlano.tela
             paleta.fundo = fundo
             let t = PlanoTransform.ajustar(CGRect(x: -1.1, y: -1.0, width: 2.2, height: 2.0), em: size, margem: 6)
-            FloorPlanRenderer(plano: plano, t: t, paleta: paleta, mostrarCotas: false, mostrarAcessorios: false, mostrarRotulos: false)
+            FloorPlanRenderer(plano: plano, t: t, paleta: paleta, mostrarCotas: false, mostrarAcessorios: false,
+                              mostrarArea: false, mostrarNomeComodo: false, mostrarNomesObjetos: false)
                 .desenhar(ctx, tamanho: size)
         }
     }

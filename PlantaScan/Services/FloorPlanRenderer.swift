@@ -63,7 +63,11 @@ struct FloorPlanRenderer {
     var titulo: String? = nil
     var mostrarCotas = true
     var mostrarAcessorios = true
-    var mostrarRotulos = true
+    var mostrarArea = true
+    var mostrarNomeComodo = true
+    var mostrarNomesObjetos = true
+    /// Direção do norte verdadeiro no plano (radianos); nil = não medido (a bússola não é desenhada).
+    var anguloNorte: Double? = nil
 
     private var larguraParede: CGFloat {
         max(CGFloat(FloorPlanBuilder.espessuraPadrao) * t.escala, 3)
@@ -75,7 +79,7 @@ struct FloorPlanRenderer {
         desenharParedes(ctx)
         desenharAberturas(ctx)
         if mostrarCotas { desenharCotas(ctx) }
-        if mostrarRotulos { desenharRotuloArea(ctx) }
+        if mostrarArea || mostrarNomeComodo { desenharRotuloArea(ctx) }
         if mostrarAcessorios {
             desenharBussola(ctx, tamanho: tamanho)
             desenharEscala(ctx, tamanho: tamanho)
@@ -115,7 +119,7 @@ struct FloorPlanRenderer {
             let sel = o.id == selecionado
             ctx.fill(path, with: .color(sel ? paleta.destaque.opacity(0.25) : paleta.objetoFundo))
             ctx.stroke(path, with: .color(sel ? paleta.destaque : paleta.objeto), lineWidth: sel ? 2 : 1)
-            guard mostrarRotulos, pts.count == 4 else { continue }
+            guard mostrarNomesObjetos, pts.count == 4 else { continue }
             let lado = min(pts[0].distancia(pts[1]), pts[1].distancia(pts[2]))
             if lado > 26 {
                 let fonte = min(max(lado / 5, 8), 12)
@@ -281,27 +285,45 @@ struct FloorPlanRenderer {
     private func desenharRotuloArea(_ ctx: GraphicsContext) {
         guard plano.area > 0 else { return }
         let c = t.tela(plano.centroRotulo)
+        let nome = mostrarNomeComodo ? (titulo ?? "") : ""
         let area = Text(Formato.area(plano.area)).font(.system(size: 12)).foregroundStyle(paleta.cota)
-        if let titulo, !titulo.isEmpty {
-            ctx.draw(Text(titulo).font(.system(size: 14, weight: .semibold)).foregroundStyle(paleta.texto), at: CGPoint(x: c.x, y: c.y - 9))
+        let textoNome = Text(nome).font(.system(size: 14, weight: .semibold)).foregroundStyle(paleta.texto)
+        switch (nome.isEmpty, mostrarArea) {
+        case (false, true):
+            ctx.draw(textoNome, at: CGPoint(x: c.x, y: c.y - 9))
             ctx.draw(area, at: CGPoint(x: c.x, y: c.y + 9))
-        } else {
+        case (false, false):
+            ctx.draw(textoNome, at: c)
+        case (true, true):
             ctx.draw(area, at: c)
+        case (true, false):
+            break
         }
     }
 
     private func desenharBussola(_ ctx: GraphicsContext, tamanho: CGSize) {
-        let c = CGPoint(x: tamanho.width - 30, y: 40)
+        guard let norte = anguloNorte else { return }
+        let c = CGPoint(x: tamanho.width - 32, y: 44)
         let r: CGFloat = 15
         ctx.stroke(Path(ellipseIn: CGRect(x: c.x - r, y: c.y - r, width: 2 * r, height: 2 * r)), with: .color(paleta.cota), lineWidth: 1)
+
+        // A seta é desenhada apontando para cima (−π/2) e girada até o norte.
+        var g = ctx
+        g.translateBy(x: c.x, y: c.y)
+        g.rotate(by: .radians(norte + .pi / 2))
         var seta = Path()
-        seta.move(to: CGPoint(x: c.x, y: c.y - r + 3))
-        seta.addLine(to: CGPoint(x: c.x + 5, y: c.y + 6))
-        seta.addLine(to: CGPoint(x: c.x, y: c.y + 2))
-        seta.addLine(to: CGPoint(x: c.x - 5, y: c.y + 6))
+        seta.move(to: CGPoint(x: 0, y: -r + 3))
+        seta.addLine(to: CGPoint(x: 5, y: 6))
+        seta.addLine(to: CGPoint(x: 0, y: 2))
+        seta.addLine(to: CGPoint(x: -5, y: 6))
         seta.closeSubpath()
-        ctx.fill(seta, with: .color(paleta.texto))
-        ctx.draw(Text("N").font(.system(size: 10, weight: .bold)).foregroundStyle(paleta.texto), at: CGPoint(x: c.x, y: c.y - r - 8))
+        g.fill(seta, with: .color(paleta.texto))
+
+        let pontaN = CGPoint(x: cos(norte) * (r + 9), y: sin(norte) * (r + 9))
+        ctx.draw(
+            Text("N").font(.system(size: 10, weight: .bold)).foregroundStyle(paleta.texto),
+            at: CGPoint(x: c.x + pontaN.x, y: c.y + pontaN.y)
+        )
     }
 
     private func desenharEscala(_ ctx: GraphicsContext, tamanho: CGSize) {

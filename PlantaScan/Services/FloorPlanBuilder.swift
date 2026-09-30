@@ -142,6 +142,14 @@ enum FloorPlanBuilder {
             return r
         }
 
+        if let nomes = comodo.nomesObjetos, !nomes.isEmpty {
+            for i in plano.objetos.indices {
+                if let nome = nomes[plano.objetos[i].id.uuidString], !nome.isEmpty {
+                    plano.objetos[i].nome = nome
+                }
+            }
+        }
+
         let objetosRemovidos = Set(comodo.objetosRemovidos ?? [])
         if !objetosRemovidos.isEmpty {
             let antes = plano.objetos.count

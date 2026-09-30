@@ -11,6 +11,12 @@ struct ComodoPlanView: View {
     @State private var erro: String?
     @State private var selecionado: ElementoPlano?
     @State private var editando: AlvoEdicao?
+    @State private var renomeandoObjeto: ElementoPlano?
+    @State private var renomeandoComodo = false
+    @State private var ajustandoNorte = false
+    @State private var novoNome = ""
+    @AppStorage("mostrarNomeComodo") private var mostrarNomeComodo = true
+    @AppStorage("mostrarNomesObjetos") private var mostrarNomesObjetos = true
 
     private struct AlvoEdicao: Identifiable {
         let id: UUID
@@ -41,21 +47,75 @@ struct ComodoPlanView: View {
             if plano.vazio {
                 ContentUnavailableView("Planta vazia", systemImage: "square.dashed", description: Text("O scan não detectou paredes."))
             } else {
-                FloorPlanCanvas(plano: plano, titulo: comodo.nome, selecionado: $selecionado)
+                FloorPlanCanvas(
+                    plano: plano, titulo: comodo.nome, selecionado: $selecionado,
+                    mostrarNomeComodo: mostrarNomeComodo, mostrarNomesObjetos: mostrarNomesObjetos,
+                    anguloNorte: comodo.anguloNorte
+                )
             }
             Divider()
             painel(plano)
         }
         .toolbar {
-            if plano.quantidadeRemovidos > 0 {
-                ToolbarItem(placement: .primaryAction) {
-                    Button {
-                        store.restaurarRemovidos(comodoID: comodoID, imovelID: imovelID)
-                    } label: {
-                        Label("Restaurar removidos (\(plano.quantidadeRemovidos))", systemImage: "arrow.uturn.backward")
+            ToolbarItem(placement: .primaryAction) {
+                Menu {
+                    Section("Exibir na planta") {
+                        Toggle("Nome do cômodo", isOn: $mostrarNomeComodo)
+                        Toggle("Nomes dos objetos", isOn: $mostrarNomesObjetos)
                     }
+                    Button {
+                        novoNome = comodo.nome
+                        renomeandoComodo = true
+                    } label: {
+                        Label("Renomear cômodo", systemImage: "pencil")
+                    }
+                    Button {
+                        ajustandoNorte = true
+                    } label: {
+                        Label("Ajustar norte…", systemImage: "location.north.line")
+                    }
+                    if plano.quantidadeRemovidos > 0 {
+                        Button {
+                            store.restaurarRemovidos(comodoID: comodoID, imovelID: imovelID)
+                        } label: {
+                            Label("Restaurar removidos (\(plano.quantidadeRemovidos))", systemImage: "arrow.uturn.backward")
+                        }
+                    }
+                } label: {
+                    Label("Opções", systemImage: "ellipsis.circle")
                 }
             }
+        }
+        .sheet(isPresented: $ajustandoNorte) {
+            AjusteNorteView(medido: comodo.norte, ajusteInicial: comodo.ajusteNorte ?? 0) { graus in
+                store.ajustarNorte(graus, comodoID: comodoID, imovelID: imovelID)
+            }
+            .presentationDetents([.medium])
+        }
+        .alert("Renomear cômodo", isPresented: $renomeandoComodo) {
+            TextField("Nome do cômodo", text: $novoNome)
+            Button("Salvar") {
+                let nome = novoNome.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !nome.isEmpty {
+                    store.renomearComodo(id: comodoID, para: nome, imovelID: imovelID)
+                }
+            }
+            Button("Cancelar", role: .cancel) {}
+        }
+        .alert(
+            "Renomear objeto",
+            isPresented: Binding(get: { renomeandoObjeto != nil }, set: { if !$0 { renomeandoObjeto = nil } }),
+            presenting: renomeandoObjeto
+        ) { obj in
+            TextField("Nome do objeto", text: $novoNome)
+            Button("Salvar") {
+                store.renomearObjeto(id: obj.id, para: novoNome.trimmingCharacters(in: .whitespacesAndNewlines),
+                                     comodoID: comodoID, imovelID: imovelID)
+                selecionado = nil
+            }
+            Button("Cancelar", role: .cancel) {}
+        } message: { _ in
+            Text("Deixe em branco para voltar ao nome detectado.")
         }
         .sheet(item: $editando) { alvo in
             if let ab = plano.aberturas.first(where: { $0.id == alvo.id }) {
@@ -144,14 +204,24 @@ struct ComodoPlanView: View {
                 }
             }
         case .objeto:
-            Button(role: .destructive) {
-                store.removerObjeto(id: sel.id, comodoID: comodoID, imovelID: imovelID)
-                selecionado = nil
-            } label: {
-                Label("Remover objeto (detectado errado)", systemImage: "trash")
-                    .frame(maxWidth: .infinity)
+            HStack {
+                Button {
+                    novoNome = sel.nome
+                    renomeandoObjeto = sel
+                } label: {
+                    Label("Renomear", systemImage: "pencil")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                Button(role: .destructive) {
+                    store.removerObjeto(id: sel.id, comodoID: comodoID, imovelID: imovelID)
+                    selecionado = nil
+                } label: {
+                    Label("Remover", systemImage: "trash")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
             }
-            .buttonStyle(.bordered)
         }
     }
 

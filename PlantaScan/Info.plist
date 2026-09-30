@@ -24,6 +24,8 @@
 	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>O PlantaScan usa a câmera e o LiDAR para escanear os cômodos e gerar a planta baixa.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>A localização é usada só para corrigir a bússola e marcar o norte verdadeiro na planta.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
