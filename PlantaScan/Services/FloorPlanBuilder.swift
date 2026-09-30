@@ -35,7 +35,9 @@ enum FloorPlanBuilder {
 
         plano.paredes = paredes.map { s in
             let (a, b) = extremos(s.transform, largura: s.dimensions.x)
-            return Parede2D(id: s.identifier, a: a, b: b, dimensoes: dimensoes(s.dimensions))
+            var p = Parede2D(id: s.identifier, a: a, b: b, dimensoes: dimensoes(s.dimensions))
+            p.yBase = base(s.transform, altura: s.dimensions.y)
+            return p
         }
 
         // Piso: usa polygonCorners (iOS 17); senão, o polígono formado pelas paredes.
@@ -65,7 +67,7 @@ enum FloorPlanBuilder {
         func abertura(_ s: CapturedRoom.Surface, _ tipo: TipoAbertura) -> Abertura2D {
             let (a, b) = extremos(s.transform, largura: s.dimensions.x)
             let n = (b - a).normalizado.perpendicular
-            return Abertura2D(
+            var ab = Abertura2D(
                 id: s.identifier,
                 tipo: tipo,
                 a: a,
@@ -73,6 +75,8 @@ enum FloorPlanBuilder {
                 ladoInterno: ladoInterno(meio: CGPoint.media(a, b), normal: n, pisos: contornos, centro: centro),
                 dimensoes: dimensoes(s.dimensions)
             )
+            ab.yBase = base(s.transform, altura: s.dimensions.y)
+            return ab
         }
         plano.aberturas = portas.map { abertura($0, .porta) }
             + janelas.map { abertura($0, .janela) }
@@ -108,7 +112,7 @@ enum FloorPlanBuilder {
             let u = (parede.b - parede.a).normalizado
             let meio = parede.a + u * CGFloat(m.posicao)
             let meia = CGFloat(m.largura) / 2
-            plano.aberturas.append(Abertura2D(
+            var ab = Abertura2D(
                 id: m.id,
                 tipo: m.tipo,
                 a: meio - u * meia,
@@ -116,7 +120,10 @@ enum FloorPlanBuilder {
                 ladoInterno: ladoInterno(meio: meio, normal: u.perpendicular, pisos: plano.pisos, centro: plano.centro),
                 dimensoes: Dimensoes(largura: m.largura, altura: m.altura, profundidade: 0),
                 manual: true
-            ))
+            )
+            // Janelas manuais: peitoril padrão de 1,00 m.
+            ab.yBase = parede.yBase + (m.tipo == .janela ? 1.0 : 0)
+            plano.aberturas.append(ab)
         }
 
         let edicoes = comodo.edicoes ?? [:]
@@ -169,6 +176,10 @@ enum FloorPlanBuilder {
         let u = eixo(t.columns.0)
         let m = CGFloat(largura) / 2
         return (c - u * m, c + u * m)
+    }
+
+    private static func base(_ t: simd_float4x4, altura: Float) -> Double {
+        Double(t.columns.3.y) - Double(altura) / 2
     }
 
     private static func eixo(_ v: simd_float4) -> CGVector {

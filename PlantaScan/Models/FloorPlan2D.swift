@@ -24,6 +24,19 @@ struct FloorPlan2D {
 
     var vazio: Bool { paredes.isEmpty && objetos.isEmpty }
 
+    /// Altura do piso (Y do mundo): base mais baixa das paredes.
+    var nivelPiso: Double { paredes.map(\.yBase).min() ?? 0 }
+
+    /// Pé-direito médio (altura média das paredes).
+    var peDireito: Double {
+        guard !paredes.isEmpty else { return 0 }
+        return paredes.reduce(0) { $0 + $1.dimensoes.altura } / Double(paredes.count)
+    }
+
+    var perimetro: Double {
+        pisos.reduce(0) { $0 + Geometria.perimetro($1) }
+    }
+
     func contar(_ tipo: TipoAbertura) -> Int {
         aberturas.filter { $0.tipo == tipo }.count
     }
@@ -48,6 +61,8 @@ struct Parede2D: Identifiable {
     var dimensoes: Dimensoes
     /// Centro do cômodo a que a parede pertence (para desenhar a cota do lado de fora).
     var referencia: CGPoint? = nil
+    /// Altura (Y do mundo) da base da parede, em metros.
+    var yBase: Double = 0
 }
 
 struct Abertura2D: Identifiable {
@@ -62,6 +77,8 @@ struct Abertura2D: Identifiable {
     var dobradicaNoFim = false
     var dimensoes: Dimensoes
     var manual = false
+    /// Altura (Y do mundo) da base da abertura, em metros (peitoril, no caso de janelas).
+    var yBase: Double = 0
 
     init(id: UUID, tipo: TipoAbertura, a: CGPoint, b: CGPoint, ladoInterno: CGVector, dimensoes: Dimensoes, manual: Bool = false) {
         self.id = id

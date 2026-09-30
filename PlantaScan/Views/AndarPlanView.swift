@@ -55,46 +55,11 @@ struct AndarPlanView: View {
         .task { carregar() }
     }
 
-    private struct Montagem {
-        var plano: FloorPlan2D
-        var norte: Double?
-        var separados: Bool
+    private func montar() -> MontagemAndar {
+        MontadorPlanta.montar(andar: andar, comodos: comodos, rooms: rooms)
     }
 
-    private func montar() -> Montagem {
-        // Agrupa por sessão; cômodos antigos sem sessão ficam cada um no seu grupo.
-        var ordem: [String] = []
-        var grupos: [String: [FloorPlan2D]] = [:]
-        var norte: Double?
-        for c in comodos {
-            guard let room = rooms[c.id] else { continue }
-            var p = FloorPlanBuilder.construir(room, comodo: c)
-            p.rotulos = [RotuloComodo(ponto: p.centroRotulo, nome: c.nome, area: p.area)]
-            let chave = c.sessao?.uuidString ?? c.id.uuidString
-            if grupos[chave] == nil {
-                ordem.append(chave)
-            }
-            // O norte vale para o primeiro grupo (os outros podem estar em outro referencial).
-            if ordem.first == chave, norte == nil {
-                norte = c.anguloNorte
-            }
-            grupos[chave, default: []].append(p)
-        }
-
-        var partes: [FloorPlan2D] = []
-        var proximoX: CGFloat = 0
-        for chave in ordem {
-            var g = FloorPlan2D.combinar(grupos[chave] ?? [])
-            if !partes.isEmpty {
-                g.deslocar(CGVector(dx: proximoX - g.limites.minX, dy: 0))
-            }
-            proximoX = g.limites.maxX + 1.5
-            partes.append(g)
-        }
-        return Montagem(plano: FloorPlan2D.combinar(partes), norte: norte, separados: ordem.count > 1)
-    }
-
-    private func painel(_ m: Montagem) -> some View {
+    private func painel(_ m: MontagemAndar) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             if let sel = selecionado {
                 HStack {
@@ -148,13 +113,7 @@ struct AndarPlanView: View {
 
     private func carregar() {
         guard !carregado else { return }
-        var r: [UUID: CapturedRoom] = [:]
-        for c in comodos {
-            if let room = try? Storage.carregarScan(comodoID: c.id, imovelID: imovelID) {
-                r[c.id] = room
-            }
-        }
-        rooms = r
+        rooms = MontadorPlanta.carregarRooms(comodos, imovelID: imovelID)
         carregado = true
     }
 }

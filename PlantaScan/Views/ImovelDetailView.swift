@@ -8,6 +8,7 @@ struct ImovelDetailView: View {
     @State private var scan: ConfigScan?
     @State private var editando: Comodo?
     @State private var andarAtual = 1
+    @State private var exportando = false
 
     var body: some View {
         if let imovel = store.imovel(id: imovelID) {
@@ -112,6 +113,20 @@ struct ImovelDetailView: View {
             }
         }
         .navigationTitle(imovel.nome)
+        .toolbar {
+            if !imovel.comodos.isEmpty {
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        exportando = true
+                    } label: {
+                        Label("Exportar PDF", systemImage: "square.and.arrow.up")
+                    }
+                }
+            }
+        }
+        .sheet(isPresented: $exportando) {
+            ExportarView(imovelID: imovelID)
+        }
         .safeAreaInset(edge: .bottom) {
             Menu {
                 Section("Novo scan · \(Formato.andar(andarAtual))") {

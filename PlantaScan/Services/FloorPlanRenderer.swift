@@ -52,6 +52,19 @@ struct PaletaPlano {
         texto: Color(uiColor: .label),
         destaque: .orange
     )
+
+    /// Preto e branco, para PDF/PNG.
+    static let impressao = PaletaPlano(
+        fundo: .white,
+        parede: .black,
+        piso: Color(white: 0.95),
+        objeto: Color(white: 0.4),
+        objetoFundo: Color(white: 0.97),
+        janela: Color(white: 0.15),
+        cota: Color(white: 0.2),
+        texto: .black,
+        destaque: .orange
+    )
 }
 
 /// Desenha a planta num GraphicsContext (Canvas na tela; o mesmo código servirá para PDF/PNG).
@@ -68,6 +81,10 @@ struct FloorPlanRenderer {
     var mostrarNomesObjetos = true
     /// Direção do norte verdadeiro no plano (radianos); nil = não medido (a bússola não é desenhada).
     var anguloNorte: Double? = nil
+    /// Multiplicador do tamanho dos textos (menor na impressão).
+    var escalaTexto: CGFloat = 1
+    /// Códigos das esquadrias (P1, J1…) desenhados junto das portas/janelas.
+    var codigos: [UUID: String] = [:]
 
     private var larguraParede: CGFloat {
         max(CGFloat(FloorPlanBuilder.espessuraPadrao) * t.escala, 3)
@@ -122,7 +139,7 @@ struct FloorPlanRenderer {
             guard mostrarNomesObjetos, pts.count == 4 else { continue }
             let lado = min(pts[0].distancia(pts[1]), pts[1].distancia(pts[2]))
             if lado > 26 {
-                let fonte = min(max(lado / 5, 8), 12)
+                let fonte = min(max(lado / 5, 8), 12) * escalaTexto
                 ctx.draw(
                     Text(o.nome).font(.system(size: fonte)).foregroundStyle(paleta.objeto),
                     at: t.tela(o.centro)
@@ -157,6 +174,14 @@ struct FloorPlanRenderer {
             // Batentes.
             ctx.stroke(linha(a - n * h, a + n * h), with: .color(cor), lineWidth: 1.5)
             ctx.stroke(linha(b - n * h, b + n * h), with: .color(cor), lineWidth: 1.5)
+
+            if let codigo = codigos[ab.id] {
+                let pos = CGPoint.media(a, b) + n * (h + 9 * escalaTexto)
+                ctx.draw(
+                    Text(codigo).font(.system(size: 8 * escalaTexto, weight: .bold)).foregroundStyle(paleta.texto),
+                    at: pos
+                )
+            }
 
             switch ab.tipo {
             case .vao:
@@ -275,7 +300,7 @@ struct FloorPlanRenderer {
             c.rotate(by: .radians(Double(ang)))
             c.draw(
                 Text(Formato.metros(p.dimensoes.largura))
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: 11 * escalaTexto, weight: .semibold))
                     .foregroundStyle(paleta.cota),
                 at: .zero
             )
@@ -295,8 +320,8 @@ struct FloorPlanRenderer {
 
     private func desenharRotulo(_ ctx: GraphicsContext, nome: String, area valorArea: Double, em c: CGPoint) {
         let mostrarArea = self.mostrarArea && valorArea > 0
-        let area = Text(Formato.area(valorArea)).font(.system(size: 12)).foregroundStyle(paleta.cota)
-        let textoNome = Text(nome).font(.system(size: 14, weight: .semibold)).foregroundStyle(paleta.texto)
+        let area = Text(Formato.area(valorArea)).font(.system(size: 12 * escalaTexto)).foregroundStyle(paleta.cota)
+        let textoNome = Text(nome).font(.system(size: 14 * escalaTexto, weight: .semibold)).foregroundStyle(paleta.texto)
         switch (nome.isEmpty, mostrarArea) {
         case (false, true):
             ctx.draw(textoNome, at: CGPoint(x: c.x, y: c.y - 9))

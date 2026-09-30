@@ -58,6 +58,27 @@ enum Geometria {
         return Double(abs(s) / 2)
     }
 
+    static func perimetro(_ p: [CGPoint]) -> Double {
+        guard p.count >= 2 else { return 0 }
+        var s: CGFloat = 0
+        for i in p.indices {
+            s += p[i].distancia(p[(i + 1) % p.count])
+        }
+        return Double(s)
+    }
+
+    /// Os segmentos ab e cd se cruzam?
+    static func cruzam(_ a: CGPoint, _ b: CGPoint, _ c: CGPoint, _ d: CGPoint) -> Bool {
+        func orientacao(_ p: CGPoint, _ q: CGPoint, _ r: CGPoint) -> CGFloat {
+            (q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x)
+        }
+        let o1 = orientacao(a, b, c)
+        let o2 = orientacao(a, b, d)
+        let o3 = orientacao(c, d, a)
+        let o4 = orientacao(c, d, b)
+        return (o1 * o2 < 0) && (o3 * o4 < 0)
+    }
+
     static func media(_ p: [CGPoint]) -> CGPoint {
         guard !p.isEmpty else { return .zero }
         let sx = p.reduce(CGFloat(0)) { $0 + $1.x }
