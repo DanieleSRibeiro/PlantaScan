@@ -7,6 +7,7 @@ struct ContaView: View {
     @State private var email = ""
     @State private var senha = ""
     @State private var criarConta = false
+    @State private var mostrarSenha = false
     @State private var enviando = false
     @State private var erro: String?
 
@@ -37,8 +38,26 @@ struct ContaView: View {
                 .textContentType(.username)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
-            SecureField("Senha", text: $senha)
+            HStack {
+                Group {
+                    if mostrarSenha {
+                        TextField("Senha", text: $senha)
+                    } else {
+                        SecureField("Senha", text: $senha)
+                    }
+                }
                 .textContentType(criarConta ? .newPassword : .password)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                Button {
+                    mostrarSenha.toggle()
+                } label: {
+                    Image(systemName: mostrarSenha ? "eye.slash" : "eye")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(mostrarSenha ? "Ocultar senha" : "Mostrar senha")
+            }
             Picker("", selection: $criarConta) {
                 Text("Entrar").tag(false)
                 Text("Criar conta").tag(true)
