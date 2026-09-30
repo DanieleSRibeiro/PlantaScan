@@ -1,0 +1,74 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-latest
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: "1"
+      HOMEBREW_NO_INSTALL_CLEANUP: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Selecionar o Xcode mais novo
+        run: |
+          ls -d /Applications/Xcode*.app
+          XCODE=$(ls -d /Applications/Xcode_*.app | grep -vi beta | sort -V | tail -n 1)
+          echo "Usando $XCODE"
+          sudo xcode-select -s "$XCODE/Contents/Developer"
+          xcodebuild -version
+          xcodebuild -showsdks | grep -i iphoneos
+
+      - name: Instalar XcodeGen
+        run: brew install xcodegen
+
+      - name: Gerar projeto
+        run: xcodegen generate
+
+      - name: Compilar (sem assinatura)
+        run: |
+          set -o pipefail
+          xcodebuild -project PlantaScan.xcodeproj -scheme PlantaScan \
+            -configuration Release -sdk iphoneos -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            build | tee build.log | grep -E "error:|warning:|BUILD" || true
+          test -d build/Build/Products/Release-iphoneos/PlantaScan.app
+
+      - name: Mostrar erros de compilação
+        if: failure()
+        run: grep -n -B2 -A6 "error:" build.log || tail -n 200 build.log
+
+      - name: Empacotar IPA
+        run: |
+          mkdir -p Payload
+          cp -R build/Build/Products/Release-iphoneos/PlantaScan.app Payload/
+          zip -qry PlantaScan.ipa Payload
+          ls -lh PlantaScan.ipa
+
+      - name: Publicar artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PlantaScan-ipa
+          path: PlantaScan.ipa
+          retention-days: 14
+
+      - name: Publicar Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="build-${{ github.run_number }}"
+          gh release create "$TAG" PlantaScan.ipa \
+            --target "$GITHUB_SHA" \
+            --title "PlantaScan $TAG" \
+            --notes "Build automático do commit ${GITHUB_SHA::7}. Instale o PlantaScan.ipa com o Sideloadly."
