@@ -21,7 +21,13 @@ struct ImovelDetailView: View {
         List {
             Section {
                 if !imovel.endereco.isEmpty {
-                    Label(imovel.endereco, systemImage: "mappin.and.ellipse")
+                    if let url = urlMapa(imovel.endereco) {
+                        Link(destination: url) {
+                            Label(imovel.endereco, systemImage: "mappin.and.ellipse")
+                        }
+                    } else {
+                        Label(imovel.endereco, systemImage: "mappin.and.ellipse")
+                    }
                 }
                 Label(imovel.dataCriacao.formatted(date: .long, time: .omitted), systemImage: "calendar")
             }
@@ -32,7 +38,11 @@ struct ImovelDetailView: View {
                         .foregroundStyle(.secondary)
                 }
                 ForEach(imovel.comodos) { comodo in
-                    ComodoRow(comodo: comodo)
+                    NavigationLink {
+                        ComodoPlanView(imovelID: imovelID, comodoID: comodo.id)
+                    } label: {
+                        ComodoRow(comodo: comodo)
+                    }
                         .contextMenu {
                             Button {
                                 iniciarRenomear(comodo)
@@ -88,6 +98,13 @@ struct ImovelDetailView: View {
         }
     }
 
+    /// Abre o endereço no app Mapas.
+    private func urlMapa(_ endereco: String) -> URL? {
+        var c = URLComponents(string: "https://maps.apple.com/")
+        c?.queryItems = [URLQueryItem(name: "q", value: endereco)]
+        return c?.url
+    }
+
     private func iniciarRenomear(_ comodo: Comodo) {
         novoNome = comodo.nome
         renomeando = comodo
@@ -105,9 +122,15 @@ private struct ComodoRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(comodo.nome)
                     .font(.headline)
-                Text("Escaneado em \(comodo.dataScan.formatted(date: .abbreviated, time: .shortened))")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                HStack(spacing: 8) {
+                    if let area = comodo.area, area > 0 {
+                        Text(Formato.area(area))
+                            .fontWeight(.medium)
+                    }
+                    Text(comodo.dataScan.formatted(date: .abbreviated, time: .shortened))
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
             }
         }
         .padding(.vertical, 2)

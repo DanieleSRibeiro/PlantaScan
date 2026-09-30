@@ -48,7 +48,8 @@ final class ImovelStore {
 
     func adicionarComodo(nome: String, room: CapturedRoom, imovelID: UUID) throws {
         guard var imovel = imovel(id: imovelID) else { return }
-        let comodo = Comodo(nome: nome)
+        var comodo = Comodo(nome: nome)
+        comodo.area = FloorPlanBuilder.construir(room).area
         try Storage.salvarScan(room, comodoID: comodo.id, imovelID: imovelID)
         imovel.comodos.append(comodo)
         atualizar(imovel)
@@ -67,6 +68,61 @@ final class ImovelStore {
             Storage.apagarScan(comodoID: imovel.comodos[i].id, imovelID: imovelID)
             imovel.comodos.remove(at: i)
         }
+        atualizar(imovel)
+    }
+
+    // MARK: Edições da planta
+
+    func definirArea(_ area: Double, comodoID: UUID, imovelID: UUID) {
+        guard let atual = imovel(id: imovelID)?.comodos.first(where: { $0.id == comodoID }),
+              atual.area.map({ abs($0 - area) > 0.001 }) ?? true else { return }
+        alterarComodo(comodoID, imovelID: imovelID) { $0.area = area }
+    }
+
+    /// Salva ajustes de uma porta/janela/vão; `nil` volta ao que foi escaneado.
+    func salvarEdicao(_ edicao: EdicaoAbertura?, elementoID: UUID, comodoID: UUID, imovelID: UUID) {
+        alterarComodo(comodoID, imovelID: imovelID) { c in
+            var edicoes = c.edicoes ?? [:]
+            edicoes[elementoID.uuidString] = edicao
+            c.edicoes = edicoes
+        }
+    }
+
+    func adicionarAbertura(_ abertura: AberturaManual, comodoID: UUID, imovelID: UUID) {
+        alterarComodo(comodoID, imovelID: imovelID) { c in
+            c.aberturasManuais = (c.aberturasManuais ?? []) + [abertura]
+        }
+    }
+
+    func removerAberturaManual(id: UUID, comodoID: UUID, imovelID: UUID) {
+        alterarComodo(comodoID, imovelID: imovelID) { c in
+            c.aberturasManuais?.removeAll { $0.id == id }
+            c.edicoes?[id.uuidString] = nil
+        }
+    }
+
+    func removerObjeto(id: UUID, comodoID: UUID, imovelID: UUID) {
+        alterarComodo(comodoID, imovelID: imovelID) { c in
+            c.objetosRemovidos = (c.objetosRemovidos ?? []) + [id]
+        }
+    }
+
+    func restaurarRemovidos(comodoID: UUID, imovelID: UUID) {
+        alterarComodo(comodoID, imovelID: imovelID) { c in
+            c.objetosRemovidos = nil
+            if var edicoes = c.edicoes {
+                for (chave, e) in edicoes where e.removido == true {
+                    edicoes[chave]?.removido = nil
+                }
+                c.edicoes = edicoes
+            }
+        }
+    }
+
+    private func alterarComodo(_ comodoID: UUID, imovelID: UUID, _ mudanca: (inout Comodo) -> Void) {
+        guard var imovel = imovel(id: imovelID),
+              let i = imovel.comodos.firstIndex(where: { $0.id == comodoID }) else { return }
+        mudanca(&imovel.comodos[i])
         atualizar(imovel)
     }
 
