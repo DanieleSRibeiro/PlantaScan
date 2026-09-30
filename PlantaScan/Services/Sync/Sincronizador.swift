@@ -234,7 +234,7 @@ final class Sincronizador {
     private func receber(_ store: ImovelStore) async throws {
         // Imóveis.
         while true {
-            let linhas = try await cliente.selecionar("imoveis", query: consulta(cursor: estado.cursorImoveis))
+            let linhas = try await cliente.selecionar("imoveis", query: consulta(cursor: estado.cursorImoveis, uid: cliente.userID))
             for l in linhas {
                 guard let id = uuid(l["id"]) else { continue }
                 if (l["apagado"] as? Bool) == true {
@@ -256,7 +256,7 @@ final class Sincronizador {
 
         // Cômodos.
         while true {
-            let linhas = try await cliente.selecionar("comodos", query: consulta(cursor: estado.cursorComodos))
+            let linhas = try await cliente.selecionar("comodos", query: consulta(cursor: estado.cursorComodos, uid: cliente.userID))
             for l in linhas {
                 guard let id = uuid(l["id"]), let imovelID = uuid(l["imovel_id"]) else { continue }
                 if (l["apagado"] as? Bool) == true {
@@ -290,12 +290,17 @@ final class Sincronizador {
 
     // MARK: Conversões
 
-    private func consulta(cursor: String?) -> [URLQueryItem] {
+    /// Só as linhas do próprio usuário: membros de uma organização Pro também podem LER
+    /// os imóveis do dono, mas o modo Simples do app não deve baixá-los.
+    private func consulta(cursor: String?, uid: String?) -> [URLQueryItem] {
         var q = [
             URLQueryItem(name: "select", value: "*"),
             URLQueryItem(name: "order", value: "atualizado_em.asc"),
             URLQueryItem(name: "limit", value: "500"),
         ]
+        if let uid {
+            q.append(URLQueryItem(name: "user_id", value: "eq.\(uid)"))
+        }
         if let cursor {
             q.append(URLQueryItem(name: "atualizado_em", value: "gt.\(cursor)"))
         }
