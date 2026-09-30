@@ -153,8 +153,8 @@ struct ContaView: View {
         erro = nil
         do {
             try await sinc.entrar(
-                email: email.trimmingCharacters(in: .whitespacesAndNewlines),
-                senha: senha,
+                email: email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+                senha: senha.trimmingCharacters(in: .newlines),
                 criarConta: criarConta
             )
             senha = ""
