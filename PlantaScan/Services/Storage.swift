@@ -71,12 +71,13 @@ enum Storage {
 
     // MARK: Scans
 
-    static func salvarScan(_ room: CapturedRoom, comodoID: UUID, imovelID: UUID) throws {
+    static func salvarScan(_ room: CapturedRoom, comodoID: UUID, imovelID: UUID, exportarModelo: Bool = true) throws {
         try fm.createDirectory(at: pasta(imovelID: imovelID), withIntermediateDirectories: true)
 
         let data = try JSONEncoder().encode(room)
         try data.write(to: urlScan(comodoID: comodoID, imovelID: imovelID), options: .atomic)
 
+        guard exportarModelo else { return }
         let usdz = urlModelo(comodoID: comodoID, imovelID: imovelID)
         if fm.fileExists(atPath: usdz.path) {
             try fm.removeItem(at: usdz)

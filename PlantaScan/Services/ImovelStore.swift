@@ -179,6 +179,53 @@ final class ImovelStore {
         return comodo
     }
 
+    /// Scan da casa toda de uma vez: divide em cômodos (paredes e portas fecham os espaços),
+    /// dá o nome de cada um pela seção reconhecida e salva um cômodo por espaço, todos no mesmo
+    /// referencial (planta montada exatamente como foi escaneada).
+    /// Se não for possível dividir, salva como um cômodo só.
+    @discardableResult
+    func adicionarCasaToda(room: CapturedRoom, imovelID: UUID, andar: Int, norte: Double?, sessao: UUID, video: URL?) throws -> [Comodo] {
+        let regioes = Segmentacao.dividir(room)
+        guard regioes.count >= 2, var imovel = imovel(id: imovelID) else {
+            return [try adicionarComodo(room: room, imovelID: imovelID, andar: andar, norte: norte, sessao: sessao, mapa: nil, video: video)]
+        }
+        // Um cômodo já escaneado no mesmo andar: a casa nova encaixa pela porta (se houver).
+        let alinhamento: Alinhamento? = {
+            var teste = Comodo(nome: "")
+            teste.andar = andar
+            teste.sessao = sessao
+            return encaixeAutomatico(para: teste, room: room, em: imovel)
+        }()
+
+        var novos: [Comodo] = []
+        for (i, regiao) in regioes.enumerated() {
+            var c = Comodo(nome: DetectorComodo.nomeSugerido(regiao.tipo, existentes: imovel.comodos + novos))
+            c.tipo = regiao.tipo
+            c.andar = andar
+            c.sessao = sessao
+            c.norte = norte
+            c.alinhamento = alinhamento
+            c.regiao = regiao.contorno.map { [Double($0.x), Double($0.y)] }
+            c.area = FloorPlanBuilder.construir(room, comodo: c).area
+            // O scan fica com cada cômodo; o modelo 3D e o vídeo, com o primeiro.
+            try Storage.salvarScan(room, comodoID: c.id, imovelID: imovelID, exportarModelo: i == 0)
+            if i == 0, let video {
+                let destino = Storage.urlVideo(comodoID: c.id, imovelID: imovelID)
+                try? FileManager.default.removeItem(at: destino)
+                try? FileManager.default.moveItem(at: video, to: destino)
+            }
+            novos.append(c)
+        }
+        imovel.comodos.append(contentsOf: novos)
+        atualizar(imovel)
+        return novos
+    }
+
+    /// Encaixe de um cômodo só (ajuste manual na planta do andar).
+    func definirAlinhamentoComodo(_ alinhamento: Alinhamento?, comodoID: UUID, imovelID: UUID) {
+        alterarComodo(comodoID, imovelID: imovelID) { $0.alinhamento = alinhamento }
+    }
+
     /// Cômodo de uma sessão nova num andar que já tem cômodos: tenta encaixar pela porta em comum.
     /// Cômodos seguintes da mesma sessão herdam o mesmo encaixe (mesmo referencial).
     private func encaixeAutomatico(para comodo: Comodo, room: CapturedRoom, em imovel: Imovel) -> Alinhamento? {

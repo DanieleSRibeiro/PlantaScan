@@ -31,7 +31,7 @@ struct AndarPlanView: View {
         guard let grupoAtivo, let temporario else { return comodos }
         return comodos.map { c in
             var c = c
-            if c.chaveSessaoPropria == grupoAtivo { c.alinhamento = temporario }
+            if c.id.uuidString == grupoAtivo { c.alinhamento = temporario }
             return c
         }
     }
@@ -149,7 +149,7 @@ struct AndarPlanView: View {
     private func painelEncaixe(_ m: MontagemAndar) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             if let grupoAtivo {
-                let nomes = comodos.filter { $0.chaveSessaoPropria == grupoAtivo }.map(\.nome).joined(separator: ", ")
+                let nomes = comodos.filter { $0.id.uuidString == grupoAtivo }.map(\.nome).joined(separator: ", ")
                 Text("Movendo: \(nomes)").font(.headline).lineLimit(2)
                 Text("Arraste com o dedo para mover. Use os botões para girar.")
                     .font(.caption)
@@ -187,7 +187,7 @@ struct AndarPlanView: View {
                 if grupoAtivo != nil {
                     Button("Soltar") {
                         if let g = grupoAtivo {
-                            store.definirAlinhamento(nil, grupo: g, imovelID: imovelID)
+                            if let id = UUID(uuidString: g) { store.definirAlinhamentoComodo(nil, comodoID: id, imovelID: imovelID) }
                         }
                         sairDoEncaixe()
                     }
@@ -195,7 +195,7 @@ struct AndarPlanView: View {
                     Spacer()
                     Button("Salvar posição") {
                         if let g = grupoAtivo {
-                            store.definirAlinhamento(temporario, grupo: g, imovelID: imovelID)
+                            if let id = UUID(uuidString: g) { store.definirAlinhamentoComodo(temporario, comodoID: id, imovelID: imovelID) }
                         }
                         sairDoEncaixe()
                     }
@@ -212,7 +212,7 @@ struct AndarPlanView: View {
         Button(titulo) {
             guard let grupoAtivo, let atual = temporario else { return }
             let planos = comodosExibidos
-                .filter { $0.chaveSessaoPropria == grupoAtivo }
+                .filter { $0.id.uuidString == grupoAtivo }
                 .compactMap { m.planosPorComodo[$0.id] }
             let centro = FloorPlan2D.combinar(planos).centroRotulo
             temporario = Encaixe.girar(atual, por: delta, em: centro)
@@ -244,15 +244,19 @@ struct AndarPlanView: View {
         guard let c = comodosExibidos.first(where: { c in
             m.planosPorComodo[c.id]?.pisos.contains { Geometria.contem($0, p) } ?? false
         }) else { return }
-        let grupo = c.chaveSessaoPropria
-        if grupo == m.chavePrincipal && c.alinhamento == nil {
-            aviso = "\"\(c.nome)\" é a referência da planta. Toque num cômodo escaneado separado."
+        // O primeiro cômodo do andar é a referência; qualquer outro pode ser movido sozinho,
+        // inclusive os escaneados em sequência.
+        if c.id == comodos.first?.id && c.alinhamento == nil {
+            aviso = "\"\(c.nome)\" é a referência da planta. Toque em outro cômodo."
             return
         }
         aviso = nil
-        grupoAtivo = grupo
+        grupoAtivo = c.id.uuidString
         if let a = c.alinhamento, a.referencia == m.chavePrincipal {
             temporario = a
+        } else if c.chaveGrupo == m.chavePrincipal {
+            // Já está no referencial da planta: começa sem deslocamento.
+            temporario = Alinhamento(referencia: m.chavePrincipal, rotacao: 0, dx: 0, dy: 0)
         } else if let room = rooms[c.id], let exibido = m.planosPorComodo[c.id] {
             // Começa onde o cômodo está sendo mostrado (ao lado da planta).
             let bruto = MontadorPlanta.planoBruto(c, room: room)
@@ -269,8 +273,8 @@ struct AndarPlanView: View {
     }
 
     private func encaixarPelaPorta(_ grupo: String) {
-        let doGrupo = comodos.filter { $0.chaveSessaoPropria == grupo }
-        let outros = comodos.filter { $0.chaveSessaoPropria != grupo }
+        let doGrupo = comodos.filter { $0.id.uuidString == grupo }
+        let outros = comodos.filter { $0.id.uuidString != grupo }
         let fixo = MontadorPlanta.montar(andar: andar, comodos: outros, rooms: rooms)
         guard let chave = fixo.chavePrincipal else { return }
         let movel = FloorPlan2D.combinar(doGrupo.compactMap { c in rooms[c.id].map { MontadorPlanta.planoBruto(c, room: $0) } })

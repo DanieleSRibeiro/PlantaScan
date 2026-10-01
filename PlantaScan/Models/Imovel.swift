@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 
 struct Imovel: Identifiable, Codable, Hashable {
@@ -37,6 +38,13 @@ struct Comodo: Identifiable, Codable, Hashable {
     var objetosRemovidos: [UUID]?
     /// Paredes removidas (ex.: parede de outro cômodo vista pela porta aberta).
     var paredesRemovidas: [UUID]?
+    /// Cômodo recortado do scan da casa toda: contorno [x, y] em metros no referencial do scan.
+    var regiao: [[Double]]?
+
+    var contornoRegiao: [CGPoint]? {
+        guard let regiao, regiao.count >= 3 else { return nil }
+        return regiao.compactMap { $0.count >= 2 ? CGPoint(x: $0[0], y: $0[1]) : nil }
+    }
     /// Nomes personalizados de objetos, por id.
     var nomesObjetos: [String: String]?
     /// Direção do norte verdadeiro no plano XZ do scan (radianos, medida pela bússola durante o scan).

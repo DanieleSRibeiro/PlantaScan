@@ -18,9 +18,53 @@ enum FloorPlanBuilder {
             pisos: room.floors
         )
         if let comodo {
+            if let regiao = comodo.contornoRegiao {
+                recortar(&plano, regiao: regiao)
+            }
             aplicar(comodo, em: &plano)
         }
         return plano
+    }
+
+    /// Deixa só a parte do scan da casa toda que pertence a um cômodo.
+    static func recortar(_ plano: inout FloorPlan2D, regiao: [CGPoint]) {
+        func distanciaBorda(_ p: CGPoint) -> CGFloat {
+            var menor = CGFloat.greatestFiniteMagnitude
+            for i in regiao.indices {
+                menor = min(menor, Geometria.distancia(ponto: p, a: regiao[i], b: regiao[(i + 1) % regiao.count]))
+            }
+            return menor
+        }
+        let centro = Geometria.centroidePoligono(regiao)
+
+        // Paredes: só o trecho que encosta no contorno do cômodo.
+        plano.paredes = plano.paredes.compactMap { w in
+            let amostras = 32
+            var primeiro: CGFloat?
+            var ultimo: CGFloat = 0
+            let d = w.b - w.a
+            for s in 0...amostras {
+                let t = CGFloat(s) / CGFloat(amostras)
+                if distanciaBorda(w.a + d * t) <= 0.2 {
+                    if primeiro == nil { primeiro = t }
+                    ultimo = t
+                }
+            }
+            guard let t0 = primeiro else { return nil }
+            var r = w
+            r.a = w.a + d * t0
+            r.b = w.a + d * ultimo
+            guard r.a.distancia(r.b) >= 0.3 else { return nil }
+            r.dimensoes.largura = Double(r.a.distancia(r.b))
+            r.referencia = centro
+            return r
+        }
+        plano.aberturas = plano.aberturas.filter { distanciaBorda(CGPoint.media($0.a, $0.b)) <= 0.25 }
+        plano.objetos = plano.objetos.filter { Geometria.contem(regiao, $0.centro) }
+        plano.pisos = [regiao]
+        plano.area = Geometria.area(regiao)
+        plano.centro = centro
+        plano.limites = Geometria.limites(regiao + plano.paredes.flatMap { [$0.a, $0.b] })
     }
 
     static func construir(
@@ -119,7 +163,8 @@ enum FloorPlanBuilder {
                 return removidas.contains { Geometria.distancia(ponto: meio, a: $0.a, b: $0.b) < 0.15 }
             }
             removidos += removidas.count
-            let contorno = poligonoDasParedes(plano.paredes)
+            // Cômodo recortado da casa toda já tem o próprio contorno.
+            let contorno = comodo.regiao == nil ? poligonoDasParedes(plano.paredes) : []
             if contorno.count >= 3 {
                 plano.pisos = [contorno]
                 plano.area = Geometria.area(contorno)

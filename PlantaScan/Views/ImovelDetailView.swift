@@ -149,11 +149,11 @@ struct ImovelDetailView: View {
                     Button {
                         scan = ConfigScan(modo: .casaToda, sessao: UUID(), mapa: nil, andar: andarAtual)
                     } label: {
-                        Label("Vários cômodos seguidos", systemImage: "square.grid.2x2")
+                        Label("Casa toda (um scan só, divide em cômodos)", systemImage: "house")
                     }
                 }
                 if !imovel.comodos.filter({ $0.andarOuPadrao == andarAtual }).isEmpty {
-                    Section("Cômodos novos são encaixados na planta pela porta em comum. Ajuste em \"Planta do andar\" → Encaixar.") {}
+                    Section("Cômodos novos são encaixados pela porta em comum. Ajuste em \"Planta do andar\" → Encaixar.") {}
                 }
             } label: {
                 Label("Escanear · \(Formato.andar(andarAtual))", systemImage: "camera.viewfinder")
@@ -184,7 +184,14 @@ struct ImovelDetailView: View {
         }
         .fullScreenCover(item: $scan) { config in
             RoomScanView(config: config) { room, mapa, norte, andar, sessao, video in
-                try store.adicionarComodo(
+                if config.modo == .casaToda {
+                    let novos = try store.adicionarCasaToda(
+                        room: room, imovelID: imovelID, andar: andar,
+                        norte: norte, sessao: sessao, video: video
+                    )
+                    return novos.count == 1 ? novos[0].nome : "\(novos.count) cômodos"
+                }
+                return try store.adicionarComodo(
                     room: room, imovelID: imovelID, andar: andar,
                     norte: norte, sessao: sessao, mapa: mapa, video: video
                 ).nome

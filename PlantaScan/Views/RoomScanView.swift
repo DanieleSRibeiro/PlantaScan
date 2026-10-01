@@ -141,17 +141,14 @@ struct RoomScanView: View {
                         .padding(.vertical, 4)
                         .background(.regularMaterial, in: Capsule())
                 }
+                if config.modo == .casaToda && salvos.isEmpty {
+                    Text("Ande pela casa toda sem parar, com as portas abertas, passando por todos os cômodos. Toque em Concluir só no fim.")
+                        .font(.caption)
+                        .multilineTextAlignment(.center)
+                        .padding(10)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                }
                 HStack {
-                    if config.modo == .casaToda {
-                        Button {
-                            finalizarComodo(continuar: true)
-                        } label: {
-                            Label("Próximo cômodo", systemImage: "arrow.right.circle")
-                                .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(.bordered)
-                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
-                    }
                     Button {
                         finalizarComodo(continuar: false)
                     } label: {
